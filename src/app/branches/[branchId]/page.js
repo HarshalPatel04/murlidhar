@@ -112,14 +112,21 @@ export default async function BranchPage({ params }) {
                         Murlidhar Inventory
                     </Link>
 
-                    <button className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white">
-                        + Add Inventory
-                    </button>
+                    <Link
+                        href="/inventory/add"
+                        className="rounded-lg bg-neutral-900 flex gap-2 px-4 py-2 text-sm font-medium text-white"
+                    >
+                        <span className="text-xl leading-none">
+                            +
+                        </span>
+
+                        <span>Add Inventory</span>
+                    </Link>
                 </div>
             </header>
 
-            <section className="mx-auto max-w-[1408px] px-6 py-8">
-                <div className="flex justify-between">
+            <section className="mx-auto max-w-[1408px] px-6 py-6">
+                <div className="flex justify-between items-center border-b border-neutral-300 pb-2">
                     <Link
                         href="/"
                         className="text-sm text-neutral-500 hover:text-neutral-900"
@@ -127,22 +134,21 @@ export default async function BranchPage({ params }) {
                         ← All Branches
                     </Link>
 
-
-                    <h2 className="flex text-2xl font-semibold justify-center text-neutral-900">
+                    <h2 className="hidden md:block flex text-2xl font-semibold text-neutral-900">
                         Categories
                     </h2>
 
                     <div>
-                        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-neutral-900">
+                        <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">
                             {branch.name}
                         </h1>
-
-                        {branch.address && (
-                            <p className="mt-2 text-sm text-end text-neutral-500">
-                                {branch.address}
-                            </p>
-                        )}
                     </div>
+
+                </div>
+                <div className="md:hidden pt-4">
+                    <h2 className="flex text-2xl font-semibold text-neutral-900">
+                        Categories
+                    </h2>
                 </div>
 
                 <div className="mt-10">
@@ -161,7 +167,7 @@ export default async function BranchPage({ params }) {
                                     href={`/branches/${branchId}/category/${category.id}`}
                                     className="overflow-hidden w-64 h-auto rounded-xl border border-neutral-200 bg-white hover:border-neutral-400"
                                 >
-                                    <div className="relative mb-3 aspect-square w-full overflow-hidden rounded-xl bg-gray-100">
+                                    <div className="relative mb-3 aspect-square w-full overflow-hidden bg-white">
                                         <Image
                                             src={getCategoryImage(category)}
                                             alt={category.name}
@@ -171,7 +177,7 @@ export default async function BranchPage({ params }) {
                                         />
                                     </div>
 
-                                    <div className="p-4">
+                                    <div className="p-4 border-t border-neutral-400 mx-4">
                                         <h3 className="font-medium text-neutral-900">
                                             {category.name}
                                         </h3>

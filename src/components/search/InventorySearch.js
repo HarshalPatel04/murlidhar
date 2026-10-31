@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { getCategoryImage } from "@/lib/images";
 
 export default function InventorySearch({
     branchId = null,
@@ -68,7 +69,7 @@ export default function InventorySearch({
                     if (!response.ok) {
                         throw new Error(
                             data.error ||
-                                "Search failed"
+                            "Search failed"
                         );
                     }
 
@@ -105,7 +106,7 @@ export default function InventorySearch({
                 (event.ctrlKey ||
                     event.metaKey) &&
                 event.key.toLowerCase() ===
-                    "k"
+                "k"
             ) {
                 event.preventDefault();
 
@@ -130,7 +131,7 @@ export default function InventorySearch({
     }, []);
 
     return (
-        <div className="relative w-full ml-46">
+        <div className="relative">
             {/* SEARCH INPUT */}
 
             <div className="relative">
@@ -200,8 +201,8 @@ export default function InventorySearch({
 
                         {!loading &&
                             results.length ===
-                                0 && (
-                                <div className="px-4 py-8 text-center">
+                            0 && (
+                                <div className="px-4 py-6 text-center">
                                     <p className="text-sm font-medium text-neutral-700">
                                         No products
                                         found
@@ -246,144 +247,96 @@ export default function InventorySearch({
     );
 }
 
-function SearchResult({
-    product,
-    branchId,
-    onSelect,
-}) {
-    const totalQuantity =
-        product.inventory.reduce(
-            (sum, item) =>
-                sum + item.quantity,
-            0
-        );
-
-    const productHref =
-        branchId &&
-        product.category?.id &&
-        product.brand?.id
-            ? `/branches/${branchId}/category/${product.category.id}/brand/${product.brand.id}`
-            : null;
+function SearchResult({ product, branchId, onSelect }) {
+    const totalQuantity = (product.inventory || []).reduce(
+        (sum, item) => sum + item.quantity,
+        0
+    );
 
     return (
-        <div className="border-b border-neutral-100 last:border-b-0">
-            {productHref ? (
-                <Link
-                    href={productHref}
-                    onClick={onSelect}
-                    className="block px-4 py-3 hover:bg-neutral-50"
-                >
-                    <ResultContent
-                        product={product}
-                        totalQuantity={
-                            totalQuantity
-                        }
-                    />
-                </Link>
-            ) : (
-                <div className="px-4 py-3">
-                    <ResultContent
-                        product={product}
-                        totalQuantity={
-                            totalQuantity
-                        }
-                    />
-                </div>
-            )}
+        <div className="border-b border-neutral-100 px-4 py-3 last:border-b-0 hover:bg-neutral-50">
+            <ResultContent
+                product={product}
+                totalQuantity={totalQuantity}
+            />
+
+            {/* CLICKABLE BRANCH AVAILABILITY */}
+            <div className="mt-3 flex flex-wrap gap-2">
+                {(product.inventory || []).map((item) => {
+                    const branchHref =
+                        product.category?.id && product.brand?.id
+                            ? `/branches/${item.branchId}/category/${product.category.id}/brand/${product.brand.id}`
+                            : null;
+
+                    return branchHref ? (
+                        <Link
+                            key={item.branchId}
+                            href={branchHref}
+                            onClick={onSelect}
+                            className={`rounded-lg px-3 py-2 text-md font-medium transition-colors ${item.quantity > 0
+                                ? "bg-neutral-100 text-neutral-800 hover:bg-neutral-900 hover:text-white"
+                                : "bg-red-50 text-red-600 hover:bg-red-100"
+                                }`}
+                        >
+                            {item.branchName} · {item.quantity} ↗
+                        </Link>
+                    ) : (
+                        <span
+                            key={item.branchId}
+                            className="rounded-lg bg-neutral-100 px-3 py-2 text-lg text-neutral-500"
+                        >
+                            {item.branchName} · {item.quantity}
+                        </span>
+                    );
+                })}
+            </div>
         </div>
     );
 }
 
-function ResultContent({
-    product,
-    totalQuantity,
-}) {
+function ResultContent({ product, totalQuantity }) {
     return (
         <div className="flex gap-3">
-            {/* IMAGE */}
-
+            {/* PRODUCT IMAGE */}
             <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-neutral-100">
-                {product.imageUrl ? (
-                    <img
-                        src={product.imageUrl}
-                        alt=""
-                        className="h-full w-full object-cover"
-                    />
-                ) : (
-                    <div className="flex h-full items-center justify-center text-[9px] text-neutral-400">
-                        IMG
-                    </div>
-                )}
+                <img
+                    src={getCategoryImage(product.category)}
+                    alt={product.category?.name || "Category"}
+                    className="h-full w-full object-contain"
+                    onError={(event) => {
+                        event.currentTarget.onerror = null;
+                        event.currentTarget.src = "/categories/earphone.png";
+                    }}
+                />
             </div>
 
-            {/* DETAILS */}
-
+            {/* PRODUCT DETAILS */}
             <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium text-neutral-900">
                     {product.name}
                 </p>
 
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-neutral-400">
-                    {product.category && (
-                        <span>
-                            {product.category.name}
-                        </span>
-                    )}
+                    <div className="text-sm text-black">
+                        {product.category && (
+                            <span>{product.category.name}</span>
+                        )}
+                    </div>
 
                     {product.brand && (
                         <>
                             <span>·</span>
-
-                            <span>
-                                {product.brand.name}
-                            </span>
+                            <span>{product.brand.name}</span>
                         </>
-                    )}
-                </div>
-
-                {/* BRANCH AVAILABILITY */}
-
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                    {product.inventory.length ===
-                    0 ? (
-                        <span className="text-xs text-red-500">
-                            Out of stock
-                        </span>
-                    ) : (
-                        product.inventory.map(
-                            (item) => (
-                                <span
-                                    key={
-                                        item.branchId
-                                    }
-                                    className={`rounded-md px-2 py-1 text-[11px] ${
-                                        item.quantity >
-                                        0
-                                            ? "bg-neutral-100 text-neutral-700"
-                                            : "bg-red-50 text-red-500"
-                                    }`}
-                                >
-                                    {
-                                        item.branchName
-                                    }{" "}
-                                    ·{" "}
-                                    {
-                                        item.quantity
-                                    }
-                                </span>
-                            )
-                        )
                     )}
                 </div>
             </div>
 
-            {/* TOTAL */}
-
-            <div className="hidden shrink-0 text-right sm:block">
+            {/* TOTAL STOCK */}
+            <div className="shrink-0 text-right">
                 <p className="text-[10px] uppercase tracking-wide text-neutral-400">
                     Total
                 </p>
-
                 <p className="mt-1 text-sm font-semibold text-neutral-900">
                     {totalQuantity}
                 </p>

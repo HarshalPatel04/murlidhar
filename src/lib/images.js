@@ -3,7 +3,6 @@ const BRANCH_IMAGES = [
     "/branch/img2.png",
     "/branch/img3.png",
     "/branch/img4.png",
-    "/branch/img5.png",
 ];
 
 const CATEGORY_IMAGES = {
@@ -39,21 +38,12 @@ const CATEGORY_IMAGES = {
     accessories: "/categories/accessories.png",
 };
 
-export function getBranchImage(branch) {
+export function getBranchImage(branch, branchIndex = 0) {
     if (branch?.image_url) {
         return branch.image_url;
     }
 
-    if (!branch?.id) {
-        return BRANCH_IMAGES[0];
-    }
-
-    const index = [...branch.id].reduce(
-        (total, character) => total + character.charCodeAt(0),
-        0
-    ) % BRANCH_IMAGES.length;
-
-    return BRANCH_IMAGES[index];
+    return BRANCH_IMAGES[branchIndex % BRANCH_IMAGES.length];
 }
 
 export function getCategoryImage(category) {
@@ -97,9 +87,7 @@ export function getBrandImage(brand) {
 }
 
 export function getProductImage(product) {
-    if (product?.image_url) {
-        return product.image_url;
-    }
-
+    // Always use the category image for every product.
     return getCategoryImage(product?.category);
 }
+

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import ProductCard from "@/components/inventory/ProductCard";
+import ProductSearch from "./ProductSearch";
 
 export default async function BrandPage({ params }) {
     const {
@@ -146,7 +147,7 @@ export default async function BrandPage({ params }) {
     }
 
     // Convert inventory array into quick lookup
-    const quantityMap = new Map(
+    const quantityMap = Object.fromEntries(
         inventory.map((item) => [
             item.product_id,
             item.quantity,
@@ -166,13 +167,21 @@ export default async function BrandPage({ params }) {
                         Murlidhar Inventory
                     </Link>
 
-                    <button className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white">
-                        + Add Inventory
-                    </button>
+                    <Link
+                        href="/inventory/add"
+                        className="rounded-lg bg-neutral-900 flex gap-2 px-4 py-2 text-sm font-medium text-white"
+                    >
+                        <span className="text-xl leading-none">
+                            +
+                        </span>
+
+                        <span>Add Inventory</span>
+                    </Link>
+
                 </div>
             </header>
 
-            <section className="mx-auto max-w-7xl px-6 py-8">
+            <section className="mx-auto max-w-7xl px-6 py-6">
                 {/* BREADCRUMB */}
 
                 <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -216,23 +225,25 @@ export default async function BrandPage({ params }) {
 
                 {/* TITLE */}
 
-                <div className="mt-8">
+                <div className="mt-4 flex items-center justify-between">
                     <p className="text-xs font-medium uppercase tracking-wider text-neutral-400">
                         {category.name}
                     </p>
 
-                    <h1 className="mt-2 text-3xl font-semibold tracking-tight text-neutral-900">
-                        {brand.name}
-                    </h1>
+                    <div>
+                        <h1 className="text-3xl text-end font-semibold tracking-tight text-neutral-900">
+                            {brand.name}
+                        </h1>
 
-                    <p className="mt-2 text-sm text-neutral-500">
-                        Products available at {branch.name}.
-                    </p>
+                        <p className="hidden md:block mt-2 text-sm text-neutral-500">
+                            Products available at {branch.name}.
+                        </p>
+                    </div>
                 </div>
 
                 {/* PRODUCTS */}
 
-                <div className="mt-8">
+                <div className="mt-4">
                     {products.length === 0 ? (
                         <div className="rounded-xl border border-dashed border-neutral-300 bg-white p-10 text-center">
                             <p className="text-sm text-neutral-500">
@@ -240,21 +251,12 @@ export default async function BrandPage({ params }) {
                             </p>
                         </div>
                     ) : (
-                        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                            {products.map((product) => {
-                                const quantity =
-                                    quantityMap.get(product.id) ?? 0;
-
-                                return (
-                                    <ProductCard
-                                        key={product.id}
-                                        product={product}
-                                        quantity={quantity}
-                                        branchId={branchId}
-                                    />
-                                );
-                            })}
-                        </div>
+                        <ProductSearch
+                            products={products}
+                            quantityMap={quantityMap}
+                            branchId={branchId}
+                            categoryName={category.name}
+                        />
                     )}
                 </div>
             </section>

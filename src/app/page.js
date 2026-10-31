@@ -7,14 +7,6 @@ import InventorySearch from "@/components/search/InventorySearch";
 import Image from "next/image";
 import { getBranchImage } from "@/lib/images";
 
-const branchImages = [
-  "/branch/img1.png",
-  "/branch/img2.png",
-  "/branch/img3.png",
-  "/branch/img4.png",
-  "/branch/img5.png",
-];
-
 export default function HomePage() {
   const [branches, setBranches] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -60,7 +52,7 @@ export default function HomePage() {
 
       {/* HEADER */}
       <header className="border-b border-neutral-200 bg-white">
-        <div className="mx-auto flex h-16 max-w-7xl items-center gap-6 px-6">
+        <div className="flex justify-around h-16 items-center">
           <Link
             href="/"
             className="shrink-0 text-lg font-semibold tracking-tight text-neutral-900"
@@ -69,17 +61,31 @@ export default function HomePage() {
           </Link>
 
           {/* SEARCH PLACEHOLDER */}
-          <div className="hidden flex-1 md:block">
-            <div className="flex h-10 w-full items-center px-4 text-left text-sm text-neutral-400">
-              <InventorySearch />
-            </div>
+          <div className="hidden md:block w-xl">
+            <InventorySearch />
+          </div>
+
+          {/* MANAGE BUTTON */}
+          <div>
+            <Link
+              href="/manage"
+              className="border-2 rounded-lg p-2 hover:bg-neutral-800 hover:text-white"
+            >
+              Manage
+            </Link>
           </div>
         </div>
       </header>
 
       {/* CONTENT */}
       <section className="mx-auto max-w-7xl px-6 py-10">
-        <div className="mb-8">
+
+        {/* SEARCH PLACEHOLDER */}
+        <div className="md:hidden w-full mb-4">
+          <InventorySearch />
+        </div>
+
+        <div className="mb-12 text-center">
           <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">
             Branches
           </h1>
@@ -114,36 +120,30 @@ export default function HomePage() {
         {!loading &&
           !error &&
           branches.length > 0 && (
-            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              {branches.map((branch) => {
-                const image = getBranchImage(branch);
+            <div className="flex flex-wrap gap-20 justify-evenly">
+              {branches.map((branch, index) => {
+                const image = getBranchImage(branch, index);
 
                 return (
                   <Link
                     key={branch.id}
                     href={`/branches/${branch.id}`}
-                    className="group overflow-hidden w-76 rounded-xl border border-neutral-200 bg-white hover:border-neutral-400"
+                    className="group overflow-hidden w-76 rounded-xl border border-neutral-200 bg-white hover:border-neutral-400 transition-transform hover:scale-105 shadow-lg hover:shadow-2xl"
                   >
-                    <div className="relative mb-3 aspect-[4/3] w-full overflow-hidden rounded-xl bg-gray-100">
+                    <div className="relative aspect-[4/3] w-full overflow-hidden rounded-xl bg-gray-100">
                       <Image
-                        src={getBranchImage(branch)}
+                        src={image}
                         alt={branch.name}
                         fill
                         sizes="(max-width: 640px) 90vw, (max-width: 1024px) 45vw, 300px"
-                        className="object-cover"
+                        className="object-fill p-5 bg-white transition-transform hover:scale-110"
                       />
                     </div>
 
-                    <div className="p-5">
+                    <div className="p-5 border-t-2 border-neutral-300 mx-5 text-center">
                       <h2 className="font-semibold text-2xl text-neutral-900">
                         {branch.name}
                       </h2>
-
-                      {branch.address && (
-                        <p className="mt-1 text-md text-neutral-500">
-                          {branch.address}
-                        </p>
-                      )}
 
                       <p className="mt-4 text-md font-medium text-neutral-700">
                         View inventory →

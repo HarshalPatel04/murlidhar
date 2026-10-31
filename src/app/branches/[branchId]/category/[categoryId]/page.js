@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { getBrandImage } from "@/lib/images";
+import BrandSearch from "./BrandSearch";
 
 export default async function CategoryPage({ params }) {
     const { branchId, categoryId } = await params;
@@ -126,13 +126,20 @@ export default async function CategoryPage({ params }) {
                         Murlidhar Inventory
                     </Link>
 
-                    <button className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white">
-                        + Add Inventory
-                    </button>
+                    <Link
+                        href="/inventory/add"
+                        className="rounded-lg bg-neutral-900 flex gap-2 px-4 py-2 text-sm font-medium text-white"
+                    >
+                        <span className="text-xl leading-none">
+                            +
+                        </span>
+
+                        <span>Add Inventory</span>
+                    </Link>
                 </div>
             </header>
 
-            <section className="mx-auto max-w-7xl px-6 py-8">
+            <section className="mx-auto max-w-7xl px-6 py-6">
                 {/* BREADCRUMB */}
 
                 <div className="flex items-center gap-2 text-sm">
@@ -165,18 +172,20 @@ export default async function CategoryPage({ params }) {
 
                 {/* TITLE */}
 
-                <div className="mt-8">
+                <div className="mt-8 flex items-center justify-between">
                     <p className="text-xs font-medium uppercase tracking-wider text-neutral-400">
                         Category
                     </p>
 
-                    <h1 className="mt-2 text-3xl font-semibold tracking-tight text-neutral-900">
-                        {category.name}
-                    </h1>
+                    <div>
+                        <h1 className="mt-2 text-3xl text-end font-semibold tracking-tight text-neutral-900">
+                            {category.name}
+                        </h1>
 
-                    <p className="mt-2 text-sm text-neutral-500">
-                        Select a brand to view their products.
-                    </p>
+                        <p className="hidden md:block mt-2 text-sm text-neutral-500">
+                            Select a brand to view their products.
+                        </p>
+                    </div>
                 </div>
 
                 {/* BRANDS */}
@@ -189,33 +198,11 @@ export default async function CategoryPage({ params }) {
                             </p>
                         </div>
                     ) : (
-                        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-                            {brands.map((brand) => (
-                                <Link
-                                    key={brand.id}
-                                    href={`/branches/${branchId}/category/${categoryId}/brand/${brand.id}`}
-                                    className="group overflow-hidden rounded-xl border border-neutral-200 bg-white hover:border-neutral-400"
-                                >
-                                    <div className="flex aspect-square items-center justify-center bg-white p-8">
-                                        <img
-                                            src={getBrandImage(brand)}
-                                            alt={brand.name}
-                                            className="h-full w-full object-contain transition-transform duration-200 group-hover:scale-105"
-                                        />
-                                    </div>
-
-                                    <div className="p-4">
-                                        <h2 className="font-medium text-neutral-900">
-                                            {brand.name}
-                                        </h2>
-
-                                        <p className="mt-1 text-xs text-neutral-500">
-                                            View products →
-                                        </p>
-                                    </div>
-                                </Link>
-                            ))}
-                        </div>
+                        <BrandSearch
+                            brands={brands}
+                            branchId={branchId}
+                            categoryId={categoryId}
+                        />
                     )}
                 </div>
             </section>

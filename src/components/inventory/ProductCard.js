@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { getProductImage } from "@/lib/images";
 
 export default function ProductCard({
     product,
@@ -62,8 +63,7 @@ export default function ProductCard({
 
         if (type === "sale" && quantityValue > quantity) {
             setError(
-                `Only ${quantity} item${
-                    quantity === 1 ? "" : "s"
+                `Only ${quantity} item${quantity === 1 ? "" : "s"
                 } available in this branch.`
             );
             return;
@@ -86,7 +86,7 @@ export default function ProductCard({
         setSaving(true);
         setError("");
 
-                try {
+        try {
             const response = await fetch("/api/inventory/transaction", {
                 method: "POST",
                 headers: {
@@ -126,23 +126,20 @@ export default function ProductCard({
 
     return (
         <>
-            <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
-                {/* IMAGE */}
+            <div className="group overflow-hidden rounded-xl border border-neutral-200 bg-white transition-shadow duration-200 hover:shadow-md">
+                {/* PRODUCT IMAGE */}
 
-                <div className="flex aspect-square items-center justify-center bg-neutral-100">
-                    {product.image_url ? (
-                        <img
-                            src={product.image_url}
-                            alt={product.name}
-                            className="h-full w-full object-cover"
-                        />
-                    ) : (
-                        <div className="text-center">
-                            <div className="text-xs text-neutral-400">
-                                Product Image
-                            </div>
-                        </div>
-                    )}
+                <div className="relative flex aspect-square items-center justify-center overflow-hidden bg-white p-6">
+                    <img
+                        src={getProductImage(product)}
+                        alt={product.name}
+                        loading="lazy"
+                        className="h-full w-full object-contain transition-transform duration-200 group-hover:scale-105"
+                        onError={(event) => {
+                            event.currentTarget.onerror = null;
+                            event.currentTarget.src = "/categories/accessories.png";
+                        }}
+                    />
                 </div>
 
                 {/* CONTENT */}
@@ -159,11 +156,10 @@ export default function ProductCard({
                             </p>
 
                             <p
-                                className={`mt-0.5 text-xl font-semibold ${
-                                    quantity === 0
-                                        ? "text-red-600"
-                                        : "text-neutral-900"
-                                }`}
+                                className={`mt-0.5 text-xl font-semibold ${quantity === 0
+                                    ? "text-red-600"
+                                    : "text-neutral-900"
+                                    }`}
                             >
                                 {quantity}
                             </p>
@@ -349,8 +345,8 @@ export default function ProductCard({
                                     {saving
                                         ? "Saving..."
                                         : isPurchase
-                                        ? "Confirm Purchase"
-                                        : "Confirm Sale"}
+                                            ? "Confirm Purchase"
+                                            : "Confirm Sale"}
                                 </button>
                             </div>
                         </form>
