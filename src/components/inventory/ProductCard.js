@@ -122,11 +122,28 @@ export default function ProductCard({
         }
     }
 
+    function openProduct() {
+        router.push(
+            `/branches/${branchId}/products/${product.id}`
+        );
+    }
+
     const isPurchase = type === "purchase";
 
     return (
         <>
-            <div className="group overflow-hidden rounded-xl border border-neutral-200 bg-white transition-shadow duration-200 hover:shadow-md">
+            <div
+                onClick={openProduct}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        openProduct();
+                    }
+                }}
+                className="group cursor-pointer overflow-hidden rounded-xl border border-neutral-200 bg-white transition-shadow duration-200 hover:shadow-md"
+            >
                 {/* PRODUCT IMAGE */}
 
                 <div className="relative flex aspect-square items-center justify-center overflow-hidden bg-white p-6">
@@ -144,66 +161,26 @@ export default function ProductCard({
 
                 {/* CONTENT */}
 
-                <div className="p-4">
-                    <h2 className="font-medium leading-5 text-neutral-900">
+                <div className="p-4 flex justify-between">
+
+                    <h2 className="mt-2 font-medium leading-5 text-neutral-900">
                         {product.name}
                     </h2>
 
-                    <div className="mt-4 flex items-end justify-between gap-4">
+                    <div className="flex items-center justify-between gap-4">
                         <div>
                             <p className="text-xs text-neutral-400">
                                 Stock
                             </p>
 
                             <p
-                                className={`mt-0.5 text-xl font-semibold ${quantity === 0
+                                className={`mt-0.5 text-xl text-center font-semibold ${quantity === 0
                                     ? "text-red-600"
                                     : "text-neutral-900"
                                     }`}
                             >
                                 {quantity}
                             </p>
-                        </div>
-
-                        <div className="flex items-center overflow-hidden rounded-lg border border-neutral-300">
-                            {/* SELL */}
-
-                            <button
-                                type="button"
-                                onClick={() =>
-                                    openTransaction("sale")
-                                }
-                                disabled={quantity === 0}
-                                title={
-                                    quantity === 0
-                                        ? "No stock available"
-                                        : "Record sale"
-                                }
-                                className="flex h-9 w-9 items-center justify-center text-lg text-neutral-600 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-30"
-                            >
-                                −
-                            </button>
-
-                            {/* QUANTITY */}
-
-                            <div className="flex h-9 min-w-10 items-center justify-center border-x border-neutral-300 px-2 text-sm font-medium">
-                                {quantity}
-                            </div>
-
-                            {/* PURCHASE */}
-
-                            <button
-                                type="button"
-                                onClick={() =>
-                                    openTransaction(
-                                        "purchase"
-                                    )
-                                }
-                                title="Record purchase"
-                                className="flex h-9 w-9 items-center justify-center text-lg text-neutral-600 hover:bg-neutral-100"
-                            >
-                                +
-                            </button>
                         </div>
                     </div>
                 </div>

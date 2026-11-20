@@ -15,29 +15,23 @@ export default function AddInventoryPage() {
     const [categoryId, setCategoryId] = useState("");
     const [brandId, setBrandId] = useState("");
 
-    // Product input
     const [productSearch, setProductSearch] = useState("");
-    const [selectedProduct, setSelectedProduct] =
-        useState(null);
+    const [selectedProduct, setSelectedProduct] = useState(null);
 
-    const [creatingProduct, setCreatingProduct] =
-        useState(false);
+    const [subProducts, setSubProducts] = useState([]);
+    const [selectedSubProduct, setSelectedSubProduct] = useState(null);
+    const [loadingSubProducts, setLoadingSubProducts] = useState(false);
+
+    const [creatingProduct, setCreatingProduct] = useState(false);
 
     const [quantity, setQuantity] = useState("1");
     const [date, setDate] = useState("");
     const [time, setTime] = useState("");
 
-    const [loadingBranches, setLoadingBranches] =
-        useState(true);
-
-    const [loadingCategories, setLoadingCategories] =
-        useState(false);
-
-    const [loadingBrands, setLoadingBrands] =
-        useState(false);
-
-    const [loadingProducts, setLoadingProducts] =
-        useState(false);
+    const [loadingBranches, setLoadingBranches] = useState(true);
+    const [loadingCategories, setLoadingCategories] = useState(false);
+    const [loadingBrands, setLoadingBrands] = useState(false);
+    const [loadingProducts, setLoadingProducts] = useState(false);
 
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState("");
@@ -49,20 +43,16 @@ export default function AddInventoryPage() {
     useEffect(() => {
         const now = new Date();
 
-        setDate(
-            [
-                now.getFullYear(),
-                String(now.getMonth() + 1).padStart(2, "0"),
-                String(now.getDate()).padStart(2, "0"),
-            ].join("-")
-        );
+        setDate([
+            now.getFullYear(),
+            String(now.getMonth() + 1).padStart(2, "0"),
+            String(now.getDate()).padStart(2, "0"),
+        ].join("-"));
 
-        setTime(
-            [
-                String(now.getHours()).padStart(2, "0"),
-                String(now.getMinutes()).padStart(2, "0"),
-            ].join(":")
-        );
+        setTime([
+            String(now.getHours()).padStart(2, "0"),
+            String(now.getMinutes()).padStart(2, "0"),
+        ].join(":"));
     }, []);
 
     // -----------------------------------------
@@ -80,8 +70,7 @@ export default function AddInventoryPage() {
 
                 if (!response.ok) {
                     throw new Error(
-                        data.error ||
-                        "Unable to load branches."
+                        data.error || "Unable to load branches."
                     );
                 }
 
@@ -120,8 +109,7 @@ export default function AddInventoryPage() {
 
                 if (!response.ok) {
                     throw new Error(
-                        data.error ||
-                        "Unable to load categories."
+                        data.error || "Unable to load categories."
                     );
                 }
 
@@ -160,8 +148,7 @@ export default function AddInventoryPage() {
 
                 if (!response.ok) {
                     throw new Error(
-                        data.error ||
-                        "Unable to load brands."
+                        data.error || "Unable to load brands."
                     );
                 }
 
@@ -185,6 +172,8 @@ export default function AddInventoryPage() {
             setProducts([]);
             setProductSearch("");
             setSelectedProduct(null);
+            setSubProducts([]);
+            setSelectedSubProduct(null);
             return;
         }
 
@@ -196,14 +185,8 @@ export default function AddInventoryPage() {
                 const params = new URLSearchParams();
 
                 params.set("type", "products");
-                params.set(
-                    "categoryId",
-                    categoryId
-                );
-                params.set(
-                    "brandId",
-                    brandId
-                );
+                params.set("categoryId", categoryId);
+                params.set("brandId", brandId);
 
                 const response = await fetch(
                     `/api/inventory/options?${params.toString()}`
@@ -213,8 +196,7 @@ export default function AddInventoryPage() {
 
                 if (!response.ok) {
                     throw new Error(
-                        data.error ||
-                        "Unable to load products."
+                        data.error || "Unable to load products."
                     );
                 }
 
@@ -233,33 +215,65 @@ export default function AddInventoryPage() {
     // PRODUCT SEARCH
     // -----------------------------------------
 
-    const normalizedSearch =
-        productSearch.trim().toLowerCase();
+    const normalizedSearch = productSearch.trim().toLowerCase();
 
-    const filteredProducts =
-        normalizedSearch
-            ? products.filter((product) =>
-                product.name
-                    .toLowerCase()
-                    .includes(normalizedSearch)
-            )
-            : products;
+    const filteredProducts = normalizedSearch
+        ? products.filter((product) =>
+            product.name.toLowerCase().includes(normalizedSearch)
+        )
+        : products;
 
-    const exactProductExists =
-        products.some(
-            (product) =>
-                product.name.trim().toLowerCase() ===
-                normalizedSearch
-        );
+    const exactProductExists = products.some(
+        (product) =>
+            product.name.trim().toLowerCase() === normalizedSearch
+    );
+
+    // -----------------------------------------
+    // RESET PRODUCT SELECTION
+    // -----------------------------------------
+
+    function resetProductSelection() {
+        setSelectedProduct(null);
+        setSelectedSubProduct(null);
+        setSubProducts([]);
+        setLoadingSubProducts(false);
+    }
 
     // -----------------------------------------
     // SELECT EXISTING PRODUCT
     // -----------------------------------------
 
-    function selectProduct(product) {
+    async function selectProduct(product) {
         setSelectedProduct(product);
         setProductSearch(product.name);
+        setSelectedSubProduct(null);
+        setSubProducts([]);
         setError("");
+        setLoadingSubProducts(true);
+
+        try {
+            const response = await fetch(
+                `/api/manage/sub-products?productId=${encodeURIComponent(product.id)}`
+            );
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(
+                    data.error || "Unable to load sub-products."
+                );
+            }
+
+            const activeItems = (data.data || []).filter(
+                (item) => item.is_active === true
+            );
+
+            setSubProducts(activeItems);
+        } catch (error) {
+            setError(error.message || "Unable to load sub-products.");
+        } finally {
+            setLoadingSubProducts(false);
+        }
     }
 
     // -----------------------------------------
@@ -269,28 +283,22 @@ export default function AddInventoryPage() {
     async function createNewProduct() {
         const name = productSearch.trim();
 
-        if (!name) {
-            return;
-        }
+        if (!name) return;
 
         if (!categoryId || !brandId) {
-            setError(
-                "Select category and brand first."
-            );
+            setError("Select category and brand first.");
             return;
         }
 
         if (exactProductExists) {
             const existing = products.find(
                 (product) =>
-                    product.name
-                        .trim()
-                        .toLowerCase() ===
+                    product.name.trim().toLowerCase() ===
                     name.toLowerCase()
             );
 
             if (existing) {
-                selectProduct(existing);
+                await selectProduct(existing);
             }
 
             return;
@@ -305,8 +313,7 @@ export default function AddInventoryPage() {
                 {
                     method: "POST",
                     headers: {
-                        "Content-Type":
-                            "application/json",
+                        "Content-Type": "application/json",
                     },
                     body: JSON.stringify({
                         name,
@@ -320,8 +327,7 @@ export default function AddInventoryPage() {
 
             if (!response.ok) {
                 throw new Error(
-                    data.error ||
-                    "Unable to create product."
+                    data.error || "Unable to create product."
                 );
             }
 
@@ -332,8 +338,7 @@ export default function AddInventoryPage() {
                 newProduct,
             ]);
 
-            setSelectedProduct(newProduct);
-            setProductSearch(newProduct.name);
+            await selectProduct(newProduct);
         } catch (error) {
             setError(error.message);
         } finally {
@@ -347,7 +352,6 @@ export default function AddInventoryPage() {
 
     async function handleSubmit(event) {
         event.preventDefault();
-
         setError("");
 
         const quantityValue = Number(quantity);
@@ -368,19 +372,22 @@ export default function AddInventoryPage() {
         }
 
         if (!selectedProduct) {
-            setError(
-                "Select an existing product or create a new product."
-            );
+            setError("Select an existing product or create a new product.");
             return;
         }
 
-        if (
-            !Number.isInteger(quantityValue) ||
-            quantityValue <= 0
-        ) {
-            setError(
-                "Quantity must be a whole number greater than zero."
-            );
+        if (loadingSubProducts) {
+            setError("Please wait while sub-products are loading.");
+            return;
+        }
+
+        if (subProducts.length > 0 && !selectedSubProduct) {
+            setError("Please select a sub-product.");
+            return;
+        }
+
+        if (!Number.isInteger(quantityValue) || quantityValue <= 0) {
+            setError("Quantity must be a whole number greater than zero.");
             return;
         }
 
@@ -389,15 +396,9 @@ export default function AddInventoryPage() {
             return;
         }
 
-        const transactionDate = new Date(
-            `${date}T${time}`
-        );
+        const transactionDate = new Date(`${date}T${time}`);
 
-        if (
-            Number.isNaN(
-                transactionDate.getTime()
-            )
-        ) {
+        if (Number.isNaN(transactionDate.getTime())) {
             setError("Invalid date or time.");
             return;
         }
@@ -405,32 +406,41 @@ export default function AddInventoryPage() {
         setSaving(true);
 
         try {
-            const response = await fetch(
-                "/api/inventory/transaction",
-                {
-                    method: "POST",
-                    headers: {
-                        "Content-Type":
-                            "application/json",
-                    },
-                    body: JSON.stringify({
-                        branchId,
-                        productId:
-                            selectedProduct.id,
-                        type: "purchase",
-                        quantity: quantityValue,
-                        transactionAt:
-                            transactionDate.toISOString(),
-                    }),
+            const usesSubProducts = subProducts.length > 0;
+
+            const endpoint = usesSubProducts
+                ? "/api/inventory/sub-product-transaction"
+                : "/api/inventory/transaction";
+
+            const payload = usesSubProducts
+                ? {
+                    branchId,
+                    subProductId: selectedSubProduct.id,
+                    type: "purchase",
+                    quantity: quantityValue,
+                    transactionAt: transactionDate.toISOString(),
                 }
-            );
+                : {
+                    branchId,
+                    productId: selectedProduct.id,
+                    type: "purchase",
+                    quantity: quantityValue,
+                    transactionAt: transactionDate.toISOString(),
+                };
+
+            const response = await fetch(endpoint, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify(payload),
+            });
 
             const data = await response.json();
 
             if (!response.ok) {
                 throw new Error(
-                    data.error ||
-                    "Unable to add inventory."
+                    data.error || "Unable to add inventory."
                 );
             }
 
@@ -439,13 +449,16 @@ export default function AddInventoryPage() {
             );
         } catch (error) {
             setError(
-                error.message ||
-                "Unable to add inventory."
+                error.message || "Unable to add inventory."
             );
         } finally {
             setSaving(false);
         }
     }
+
+    // -----------------------------------------
+    // UI
+    // -----------------------------------------
 
     return (
         <main className="min-h-screen bg-[#f5f6f8] px-4 py-6 text-neutral-900 sm:px-6 sm:py-10">
@@ -483,10 +496,12 @@ export default function AddInventoryPage() {
                             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-neutral-100 text-lg">
                                 +
                             </div>
+
                             <div>
                                 <p className="text-xs text-neutral-500">
                                     Transaction type
                                 </p>
+
                                 <p className="mt-0.5 text-sm font-semibold">
                                     Stock purchase
                                 </p>
@@ -505,6 +520,7 @@ export default function AddInventoryPage() {
                         <h2 className="text-base font-semibold">
                             Purchase details
                         </h2>
+
                         <p className="mt-1 text-sm text-neutral-500">
                             Complete the details below to update your stock.
                         </p>
@@ -518,10 +534,12 @@ export default function AddInventoryPage() {
                                 <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-neutral-900 text-sm font-semibold text-white">
                                     1
                                 </div>
+
                                 <div>
                                     <h3 className="text-sm font-semibold">
                                         Product information
                                     </h3>
+
                                     <p className="mt-0.5 text-xs text-neutral-500">
                                         Choose where the stock belongs.
                                     </p>
@@ -539,7 +557,7 @@ export default function AddInventoryPage() {
                                             setCategoryId("");
                                             setBrandId("");
                                             setProductSearch("");
-                                            setSelectedProduct(null);
+                                            resetProductSelection();
                                         }}
                                         disabled={loadingBranches}
                                         className="form-select"
@@ -569,7 +587,7 @@ export default function AddInventoryPage() {
                                             setCategoryId(event.target.value);
                                             setBrandId("");
                                             setProductSearch("");
-                                            setSelectedProduct(null);
+                                            resetProductSelection();
                                         }}
                                         disabled={!branchId || loadingCategories}
                                         className="form-select"
@@ -600,7 +618,7 @@ export default function AddInventoryPage() {
                                         onChange={(event) => {
                                             setBrandId(event.target.value);
                                             setProductSearch("");
-                                            setSelectedProduct(null);
+                                            resetProductSelection();
                                         }}
                                         disabled={!categoryId || loadingBrands}
                                         className="form-select"
@@ -636,10 +654,8 @@ export default function AddInventoryPage() {
                                                 type="text"
                                                 value={productSearch}
                                                 onChange={(event) => {
-                                                    setProductSearch(
-                                                        event.target.value
-                                                    );
-                                                    setSelectedProduct(null);
+                                                    setProductSearch(event.target.value);
+                                                    resetProductSelection();
                                                 }}
                                                 placeholder="Search or enter product name"
                                                 className="form-input"
@@ -655,29 +671,22 @@ export default function AddInventoryPage() {
                                                         <>
                                                             {filteredProducts.length > 0 ? (
                                                                 <div className="max-h-52 overflow-y-auto">
-                                                                    {filteredProducts.map(
-                                                                        (product) => (
-                                                                            <button
-                                                                                type="button"
-                                                                                key={product.id}
-                                                                                onClick={() =>
-                                                                                    selectProduct(product)
-                                                                                }
-                                                                                className={`flex w-full items-center justify-between border-b border-neutral-100 px-4 py-3 text-left text-sm last:border-b-0 hover:bg-neutral-50 ${selectedProduct?.id === product.id
-                                                                                        ? "bg-neutral-50 font-semibold"
-                                                                                        : ""
-                                                                                    }`}
-                                                                            >
-                                                                                <span>
-                                                                                    {product.name}
-                                                                                </span>
+                                                                    {filteredProducts.map((product) => (
+                                                                        <button
+                                                                            type="button"
+                                                                            key={product.id}
+                                                                            onClick={() => selectProduct(product)}
+                                                                            className="flex w-full items-center justify-between border-b border-neutral-100 px-4 py-3 text-left text-sm last:border-b-0 hover:bg-neutral-50"
+                                                                        >
+                                                                            <span>
+                                                                                {product.name}
+                                                                            </span>
 
-                                                                                <span className="text-xs text-neutral-400">
-                                                                                    Select →
-                                                                                </span>
-                                                                            </button>
-                                                                        )
-                                                                    )}
+                                                                            <span className="text-xs text-neutral-400">
+                                                                                Select →
+                                                                            </span>
+                                                                        </button>
+                                                                    ))}
                                                                 </div>
                                                             ) : (
                                                                 <p className="px-4 py-3 text-sm text-neutral-500">
@@ -708,6 +717,7 @@ export default function AddInventoryPage() {
                                                         <p className="text-[11px] font-medium uppercase tracking-wide text-emerald-700">
                                                             Selected product
                                                         </p>
+
                                                         <p className="mt-1 truncate text-sm font-semibold text-neutral-900">
                                                             {selectedProduct.name}
                                                         </p>
@@ -716,8 +726,9 @@ export default function AddInventoryPage() {
                                                     <button
                                                         type="button"
                                                         onClick={() => {
-                                                            setSelectedProduct(null);
                                                             setProductSearch("");
+                                                            resetProductSelection();
+                                                            setError("");
                                                         }}
                                                         className="shrink-0 rounded-lg px-3 py-2 text-xs font-semibold text-neutral-600 hover:bg-white"
                                                     >
@@ -728,6 +739,48 @@ export default function AddInventoryPage() {
                                         </div>
                                     )}
                                 </Field>
+
+                                {/* SUB-PRODUCT SELECTOR */}
+                                {selectedProduct && (
+                                    <div className="sm:col-span-2">
+                                        {loadingSubProducts ? (
+                                            <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-500">
+                                                Loading sub-products...
+                                            </div>
+                                        ) : subProducts.length > 0 ? (
+                                            <Field label="Sub-Product" required>
+                                                <select
+                                                    value={selectedSubProduct?.id || ""}
+                                                    onChange={(event) => {
+                                                        const selected = subProducts.find(
+                                                            (item) => item.id === event.target.value
+                                                        );
+
+                                                        setSelectedSubProduct(selected || null);
+                                                    }}
+                                                    className="form-select"
+                                                >
+                                                    <option value="">
+                                                        Select a sub-product
+                                                    </option>
+
+                                                    {subProducts.map((item) => (
+                                                        <option
+                                                            key={item.id}
+                                                            value={item.id}
+                                                        >
+                                                            {item.name}
+                                                        </option>
+                                                    ))}
+                                                </select>
+
+                                                <p className="mt-2 text-xs text-neutral-400">
+                                                    Select the exact variant. Stock will be added to this sub-product.
+                                                </p>
+                                            </Field>
+                                        ) : null}
+                                    </div>
+                                )}
                             </div>
                         </section>
 
@@ -737,10 +790,12 @@ export default function AddInventoryPage() {
                                 <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-neutral-900 text-sm font-semibold text-white">
                                     2
                                 </div>
+
                                 <div>
                                     <h3 className="text-sm font-semibold">
                                         Stock quantity
                                     </h3>
+
                                     <p className="mt-0.5 text-xs text-neutral-500">
                                         Enter the number of units purchased.
                                     </p>
@@ -760,6 +815,7 @@ export default function AddInventoryPage() {
                                         placeholder="Enter quantity"
                                         className="form-input"
                                     />
+
                                     <p className="mt-2 text-xs text-neutral-400">
                                         Enter a whole number greater than zero.
                                     </p>
@@ -773,10 +829,12 @@ export default function AddInventoryPage() {
                                 <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-neutral-900 text-sm font-semibold text-white">
                                     3
                                 </div>
+
                                 <div>
                                     <h3 className="text-sm font-semibold">
                                         Purchase date & time
                                     </h3>
+
                                     <p className="mt-0.5 text-xs text-neutral-500">
                                         Record when the stock was purchased.
                                     </p>
@@ -817,7 +875,10 @@ export default function AddInventoryPage() {
                                 <p className="font-semibold">
                                     Unable to add inventory
                                 </p>
-                                <p className="mt-1">{error}</p>
+
+                                <p className="mt-1">
+                                    {error}
+                                </p>
                             </div>
                         )}
                     </div>
@@ -840,7 +901,12 @@ export default function AddInventoryPage() {
 
                             <button
                                 type="submit"
-                                disabled={saving || !selectedProduct}
+                                disabled={
+                                    saving ||
+                                    !selectedProduct ||
+                                    loadingSubProducts ||
+                                    (subProducts.length > 0 && !selectedSubProduct)
+                                }
                                 className="min-h-11 rounded-xl bg-neutral-900 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-40"
                             >
                                 {saving ? "Adding inventory..." : "Add inventory"}
@@ -902,6 +968,7 @@ function Field({ label, required = false, children }) {
         <div className="min-w-0">
             <label className="mb-2 block text-sm font-medium text-neutral-700">
                 {label}
+
                 {required && (
                     <span className="ml-1 text-red-500">*</span>
                 )}

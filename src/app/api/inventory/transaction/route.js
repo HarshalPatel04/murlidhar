@@ -1,3 +1,4 @@
+
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { cookies } from "next/headers";
@@ -10,7 +11,6 @@ export const runtime = "nodejs";
 
 export async function POST(request) {
     try {
-        // Verify owner session before accessing the database.
         const cookieStore = await cookies();
 
         const token = cookieStore.get(
@@ -21,14 +21,11 @@ export async function POST(request) {
 
         if (!isOwner) {
             return NextResponse.json(
-                {
-                    error: "Unauthorized. Owner login required.",
-                },
+                { error: "Unauthorized. Owner login required." },
                 { status: 401 }
             );
         }
 
-        // Parse and validate the request.
         const body = await request.json();
 
         const {
@@ -47,18 +44,14 @@ export async function POST(request) {
             !transactionAt
         ) {
             return NextResponse.json(
-                {
-                    error: "Missing required transaction information.",
-                },
+                { error: "Missing required transaction information." },
                 { status: 400 }
             );
         }
 
         if (!["purchase", "sale"].includes(type)) {
             return NextResponse.json(
-                {
-                    error: "Invalid transaction type.",
-                },
+                { error: "Invalid transaction type." },
                 { status: 400 }
             );
         }
@@ -68,9 +61,7 @@ export async function POST(request) {
             quantity <= 0
         ) {
             return NextResponse.json(
-                {
-                    error: "Quantity must be a positive whole number.",
-                },
+                { error: "Quantity must be a positive whole number." },
                 { status: 400 }
             );
         }
@@ -80,15 +71,39 @@ export async function POST(request) {
             Number.isNaN(Date.parse(transactionAt))
         ) {
             return NextResponse.json(
-                {
-                    error: "Invalid transaction date or time.",
-                },
+                { error: "Invalid transaction date or time." },
                 { status: 400 }
             );
         }
 
-        // Use the trusted server-side Supabase client.
         const supabase = createAdminClient();
+
+        // Block parent transactions when active sub-products exist.
+        const { data: activeSubProducts, error: subProductError } =
+            await supabase
+                .from("sub_products")
+                .select("id")
+                .eq("product_id", productId)
+                .eq("is_active", true)
+                .limit(1);
+
+        if (subProductError) {
+            console.error(subProductError);
+
+            return NextResponse.json(
+                { error: "Unable to verify product stock structure." },
+                { status: 500 }
+            );
+        }
+
+        if (activeSubProducts?.length > 0) {
+            return NextResponse.json(
+                {
+                    error: "This product has sub-products. Please update stock through its sub-products instead.",
+                },
+                { status: 400 }
+            );
+        }
 
         const { data, error } = await supabase.rpc(
             "record_inventory_transaction",
@@ -102,15 +117,10 @@ export async function POST(request) {
         );
 
         if (error) {
-            console.error(
-                "Transaction RPC error:",
-                error.message
-            );
+            console.error("Transaction RPC error:", error.message);
 
             return NextResponse.json(
-                {
-                    error: "Unable to record transaction.",
-                },
+                { error: "Unable to record transaction." },
                 { status: 400 }
             );
         }
@@ -119,16 +129,12 @@ export async function POST(request) {
             success: true,
             transaction: data,
         });
+
     } catch (error) {
-        console.error(
-            "Transaction API error:",
-            error.message
-        );
+        console.error("Transaction API error:", error);
 
         return NextResponse.json(
-            {
-                error: "Unable to record transaction.",
-            },
+            { error: "Unable to record transaction." },
             { status: 500 }
         );
     }
