@@ -1,21 +1,12 @@
 
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import ProductCard from "@/components/inventory/ProductCard";
 import ProductSearch from "./ProductSearch";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export default async function BrandPage({ params }) {
-    const {
-        branchId,
-        categoryId,
-        brandId,
-    } = await params;
-
+    const { branchId, categoryId, brandId } = await params;
     const supabase = await createClient();
-
-    // -----------------------------------------
-    // LOAD BRANCH
-    // -----------------------------------------
 
     const { data: branch, error: branchError } = await supabase
         .from("branches")
@@ -24,21 +15,12 @@ export default async function BrandPage({ params }) {
         .eq("is_active", true)
         .single();
 
-    // -----------------------------------------
-    // LOAD CATEGORY
-    // -----------------------------------------
-
-    const { data: category, error: categoryError } =
-        await supabase
-            .from("categories")
-            .select("*")
-            .eq("id", categoryId)
-            .eq("is_active", true)
-            .single();
-
-    // -----------------------------------------
-    // LOAD BRAND
-    // -----------------------------------------
+    const { data: category, error: categoryError } = await supabase
+        .from("categories")
+        .select("*")
+        .eq("id", categoryId)
+        .eq("is_active", true)
+        .single();
 
     const { data: brand, error: brandError } = await supabase
         .from("brands")
@@ -48,18 +30,12 @@ export default async function BrandPage({ params }) {
         .single();
 
     if (branchError || categoryError || brandError) {
-        const error =
-            branchError ||
-            categoryError ||
-            brandError;
+        const error = branchError || categoryError || brandError;
 
         return (
             <main className="min-h-screen bg-neutral-50 p-8">
                 <div className="mx-auto max-w-7xl">
-                    <Link
-                        href="/"
-                        className="text-sm text-neutral-500"
-                    >
+                    <Link href="/" className="text-sm text-neutral-500">
                         ← All Branches
                     </Link>
 
@@ -67,7 +43,6 @@ export default async function BrandPage({ params }) {
                         <p className="font-medium text-red-800">
                             Unable to load page
                         </p>
-
                         <p className="mt-2 text-sm text-red-700">
                             {error?.message}
                         </p>
@@ -77,18 +52,14 @@ export default async function BrandPage({ params }) {
         );
     }
 
-    // -----------------------------------------
     // LOAD PRODUCTS
-    // -----------------------------------------
-
-    const { data: products, error: productsError } =
-        await supabase
-            .from("products")
-            .select("*")
-            .eq("category_id", categoryId)
-            .eq("brand_id", brandId)
-            .eq("is_active", true)
-            .order("name");
+    const { data: products, error: productsError } = await supabase
+        .from("products")
+        .select("*")
+        .eq("category_id", categoryId)
+        .eq("brand_id", brandId)
+        .eq("is_active", true)
+        .order("name");
 
     if (productsError) {
         return (
@@ -98,7 +69,6 @@ export default async function BrandPage({ params }) {
                         <p className="font-medium text-red-800">
                             Unable to load products
                         </p>
-
                         <p className="mt-2 text-sm text-red-700">
                             {productsError.message}
                         </p>
@@ -108,57 +78,57 @@ export default async function BrandPage({ params }) {
         );
     }
 
-
-    // -----------------------------------------
     // LOAD PARENT AND SUB-PRODUCT STOCK
-    // -----------------------------------------
-
-    const productIds = (products || []).map(
-        (product) => product.id
-    );
-
+    const productIds = (products || []).map((product) => product.id);
     const quantityMap = {};
+    let subProducts = [];
 
     if (productIds.length > 0) {
-        // Load normal parent inventory
-        const { data: inventory, error: inventoryError } =
-            await supabase
+        const stockSupabase = createAdminClient();
+
+        const [
+            { data: inventory, error: inventoryError },
+            { data: activeSubProducts, error: subProductsError },
+        ] = await Promise.all([
+            stockSupabase
                 .from("inventory")
                 .select("product_id, quantity")
                 .eq("branch_id", branchId)
-                .in("product_id", productIds);
+                .in("product_id", productIds),
 
-        if (inventoryError) {
-            throw new Error(inventoryError.message);
-        }
+            stockSupabase
+                .from("sub_products")
+                .select("id, product_id, name, image_url")
+                .in("product_id", productIds)
+                .eq("is_active", true)
+                .order("name"),
+        ]);
 
-        // Initialize normal parent quantities
+        if (inventoryError) throw new Error(inventoryError.message);
+        if (subProductsError) throw new Error(subProductsError.message);
+
+        // Normal parent stock
         (inventory || []).forEach((item) => {
             quantityMap[item.product_id] =
                 (quantityMap[item.product_id] || 0) +
                 (Number(item.quantity) || 0);
         });
 
-        // Load active sub-products
-        const { data: activeSubProducts, error: subProductsError } =
-            await supabase
-                .from("sub_products")
-                .select("id, product_id")
-                .in("product_id", productIds)
-                .eq("is_active", true);
+        const activeItems = activeSubProducts || [];
+        const subProductIds = activeItems.map((item) => item.id);
 
-        if (subProductsError) {
-            throw new Error(subProductsError.message);
-        }
+        // Initialize parent stock for products having sub-products
+        const parentStockMap = {};
 
-        const subProductIds = (activeSubProducts || []).map(
-            (item) => item.id
-        );
+        activeItems.forEach((item) => {
+            parentStockMap[item.product_id] ??= 0;
+        });
 
-        // Calculate parent stock from active sub-products
+        let subProductQuantityMap = {};
+
         if (subProductIds.length > 0) {
             const { data: subInventory, error: subInventoryError } =
-                await supabase
+                await stockSupabase
                     .from("sub_product_inventory")
                     .select("sub_product_id, quantity")
                     .eq("branch_id", branchId)
@@ -168,140 +138,36 @@ export default async function BrandPage({ params }) {
                 throw new Error(subInventoryError.message);
             }
 
-            const subProductQuantityMap = {};
-
+            // Sum duplicate inventory rows
             (subInventory || []).forEach((item) => {
                 subProductQuantityMap[item.sub_product_id] =
                     (subProductQuantityMap[item.sub_product_id] || 0) +
                     (Number(item.quantity) || 0);
             });
-
-            const parentStockMap = {};
-
-            (activeSubProducts || []).forEach((subProduct) => {
-                const parentId = subProduct.product_id;
-
-                parentStockMap[parentId] =
-                    (parentStockMap[parentId] || 0) +
-                    (subProductQuantityMap[subProduct.id] || 0);
-            });
-
-            // Override parent quantity wherever active sub-products exist
-            Object.entries(parentStockMap).forEach(
-                ([parentId, totalStock]) => {
-                    quantityMap[parentId] = totalStock;
-                }
-            );
-        }
-    }
-
-    // -----------------------------------------
-    // LOAD ACTIVE SUB-PRODUCTS
-    // -----------------------------------------
-
-    if (productIds.length > 0) {
-        const {
-            data: activeSubProducts,
-            error: subProductsError,
-        } = await supabase
-            .from("sub_products")
-            .select("id, product_id")
-            .in("product_id", productIds)
-            .eq("is_active", true);
-
-        if (subProductsError) {
-            return (
-                <main className="min-h-screen bg-neutral-50 p-8">
-                    <div className="mx-auto max-w-7xl">
-                        <div className="rounded-xl border border-red-200 bg-red-50 p-5">
-                            <p className="font-medium text-red-800">
-                                Unable to load sub-products
-                            </p>
-
-                            <p className="mt-2 text-sm text-red-700">
-                                {subProductsError.message}
-                            </p>
-                        </div>
-                    </div>
-                </main>
-            );
         }
 
-        // -----------------------------------------
-        // LOAD SUB-PRODUCT INVENTORY
-        // -----------------------------------------
+        // Calculate total stock for each parent
+        activeItems.forEach((item) => {
+            parentStockMap[item.product_id] +=
+                subProductQuantityMap[item.id] || 0;
+        });
 
-        const subProductIds = (activeSubProducts || []).map(
-            (item) => item.id
+        // Override parent stock with sub-product totals
+        Object.entries(parentStockMap).forEach(([parentId, totalStock]) => {
+            quantityMap[parentId] = totalStock;
+        });
+
+        // Prepare sub-product results for search
+        const productMap = Object.fromEntries(
+            (products || []).map((product) => [product.id, product])
         );
 
-        if (subProductIds.length > 0) {
-            const {
-                data: subInventory,
-                error: subInventoryError,
-            } = await supabase
-                .from("sub_product_inventory")
-                .select("sub_product_id, quantity")
-                .eq("branch_id", branchId)
-                .in("sub_product_id", subProductIds);
-
-            if (subInventoryError) {
-                return (
-                    <main className="min-h-screen bg-neutral-50 p-8">
-                        <div className="mx-auto max-w-7xl">
-                            <div className="rounded-xl border border-red-200 bg-red-50 p-5">
-                                <p className="font-medium text-red-800">
-                                    Unable to load sub-product inventory
-                                </p>
-
-                                <p className="mt-2 text-sm text-red-700">
-                                    {subInventoryError.message}
-                                </p>
-                            </div>
-                        </div>
-                    </main>
-                );
-            }
-
-            // -----------------------------------------
-            // CALCULATE PARENT STOCK
-            // -----------------------------------------
-
-            const subProductQuantityMap = {};
-
-            (subInventory || []).forEach((item) => {
-                subProductQuantityMap[item.sub_product_id] =
-                    Number(item.quantity) || 0;
-            });
-
-            const parentStockMap = {};
-
-            (activeSubProducts || []).forEach((subProduct) => {
-                const parentId = subProduct.product_id;
-
-                if (parentStockMap[parentId] === undefined) {
-                    parentStockMap[parentId] = 0;
-                }
-
-                parentStockMap[parentId] +=
-                    subProductQuantityMap[subProduct.id] || 0;
-            });
-
-            // -----------------------------------------
-            // OVERRIDE PARENT STOCK
-            // -----------------------------------------
-
-            Object.entries(parentStockMap).forEach(
-                ([parentId, totalStock]) => {
-                    quantityMap[parentId] = totalStock;
-                }
-            );
-        }
+        subProducts = activeItems.map((item) => ({
+            ...item,
+            parentName: productMap[item.product_id]?.name || "",
+            quantity: subProductQuantityMap[item.id] || 0,
+        }));
     }
-
-    // -----------------------------------------
-    // PAGE
-    // -----------------------------------------
 
     return (
         <main className="min-h-screen bg-neutral-50">
@@ -318,10 +184,7 @@ export default async function BrandPage({ params }) {
                         href="/inventory/add"
                         className="flex gap-2 rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white"
                     >
-                        <span className="text-xl leading-none">
-                            +
-                        </span>
-
+                        <span className="text-xl leading-none">+</span>
                         <span>Add Inventory</span>
                     </Link>
                 </div>
@@ -329,10 +192,7 @@ export default async function BrandPage({ params }) {
 
             <section className="mx-auto max-w-7xl px-6 py-6">
                 <div className="flex flex-wrap items-center gap-2 text-sm">
-                    <Link
-                        href="/"
-                        className="text-neutral-400 hover:text-neutral-900"
-                    >
+                    <Link href="/" className="text-neutral-400 hover:text-neutral-900">
                         Branches
                     </Link>
 
@@ -356,9 +216,7 @@ export default async function BrandPage({ params }) {
 
                     <span className="text-neutral-300">/</span>
 
-                    <span className="text-neutral-700">
-                        {brand.name}
-                    </span>
+                    <span className="text-neutral-700">{brand.name}</span>
                 </div>
 
                 <div className="mt-4 flex items-center justify-between">
@@ -387,6 +245,7 @@ export default async function BrandPage({ params }) {
                     ) : (
                         <ProductSearch
                             products={products}
+                            subProducts={subProducts}
                             quantityMap={quantityMap}
                             branchId={branchId}
                             categoryName={category.name}

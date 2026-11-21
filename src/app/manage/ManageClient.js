@@ -143,8 +143,24 @@ export default function ManagePage() {
                 `/api/manage/sub-products?productId=${productId}`,
                 { cache: "no-store" }
             );
-            const result = await response.json();
+            const responseText = await response.text();
 
+            let result = {};
+
+            try {
+                result = responseText ? JSON.parse(responseText) : {};
+            } catch {
+                throw new Error(
+                    `Invalid API response (${response.status}).`
+                );
+            }
+
+            if (!response.ok) {
+                throw new Error(
+                    result.error || `Request failed (${response.status}).`
+                );
+            }
+            
             if (!response.ok) {
                 throw new Error(
                     result.error || "Failed to load sub-products."
