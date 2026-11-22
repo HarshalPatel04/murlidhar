@@ -240,10 +240,17 @@ export default function ProductSubProductsPage() {
                     </div>
 
                     {/* MANAGE BUTTON */}
-                    <div>
+                    <div className="flex items-center gap-3">
+                        <Link
+                            href="/billing"
+                            className="rounded-lg border-2 border-neutral-900 px-4 py-2 hover:bg-neutral-900 hover:text-white"
+                        >
+                            Billing
+                        </Link>
+
                         <Link
                             href="/manage"
-                            className="border-2 rounded-lg p-2 hover:bg-neutral-800 hover:text-white"
+                            className="rounded-lg border-2 border-neutral-900 px-4 py-2 hover:bg-neutral-900 hover:text-white"
                         >
                             Manage
                         </Link>

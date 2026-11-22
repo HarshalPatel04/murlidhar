@@ -137,17 +137,13 @@ export async function GET(request) {
     }
 }
 
+
 export async function POST(request) {
     try {
-        // Verify owner session
         const cookieStore = await cookies();
-        const token = cookieStore.get(
-            getOwnerCookieName()
-        )?.value;
+        const token = cookieStore.get(getOwnerCookieName())?.value;
 
-        const isOwner = await verifyOwnerSession(token);
-
-        if (!isOwner) {
+        if (!(await verifyOwnerSession(token))) {
             return NextResponse.json(
                 { error: "Unauthorized. Owner login required." },
                 { status: 401 }
@@ -157,140 +153,175 @@ export async function POST(request) {
         const body = await request.json();
 
         const {
+            productId,
+            name,
+            imageUrl,
             branchId,
-            subProductId,
-            type,
+            allBranches,
             quantity,
-            transactionAt,
         } = body;
 
-        // Validate IDs
-        if (
-            !UUID.test(branchId || "") ||
-            !UUID.test(subProductId || "")
-        ) {
+        const cleanName =
+            typeof name === "string" ? name.trim() : "";
+
+        if (!UUID.test(productId || "")) {
             return NextResponse.json(
-                { error: "Valid branch and sub-product are required." },
+                { error: "Valid parent product is required." },
                 { status: 400 }
             );
         }
 
-        // Validate transaction type
-        if (!["purchase", "sale"].includes(type)) {
+        if (!cleanName || cleanName.length > 150) {
             return NextResponse.json(
-                { error: "Invalid transaction type." },
+                { error: "Sub-product name must contain 1–150 characters." },
                 { status: 400 }
             );
         }
 
-        // Validate quantity
         if (
+            typeof allBranches !== "boolean" ||
             !Number.isSafeInteger(quantity) ||
-            quantity <= 0
+            quantity < 0
         ) {
             return NextResponse.json(
-                { error: "Quantity must be a positive whole number." },
+                { error: "Invalid branch selection or quantity." },
                 { status: 400 }
             );
         }
 
-        // Validate date/time
-        if (
-            typeof transactionAt !== "string" ||
-            Number.isNaN(Date.parse(transactionAt))
-        ) {
+        if (!allBranches && !UUID.test(branchId || "")) {
             return NextResponse.json(
-                { error: "Invalid transaction date or time." },
+                { error: "Please select a valid branch." },
                 { status: 400 }
             );
         }
 
         const supabase = createAdminClient();
 
-        // Verify active sub-product and branch
-        const [
-            { data: subProduct, error: subProductError },
-            { data: branch, error: branchError },
-        ] = await Promise.all([
-            supabase
-                .from("sub_products")
-                .select("id, is_active")
-                .eq("id", subProductId)
-                .maybeSingle(),
+        // Validate parent product
+        const { data: product, error: productError } = await supabase
+            .from("products")
+            .select("id")
+            .eq("id", productId)
+            .eq("is_active", true)
+            .maybeSingle();
 
-            supabase
-                .from("branches")
-                .select("id")
-                .eq("id", branchId)
-                .eq("is_active", true)
-                .maybeSingle(),
-        ]);
+        if (productError) throw productError;
 
-        if (subProductError || branchError) {
-            console.error(
-                "Transaction validation:",
-                subProductError || branchError
-            );
-
+        if (!product) {
             return NextResponse.json(
-                { error: "Unable to validate stock item." },
-                { status: 500 }
-            );
-        }
-
-        if (!subProduct || !subProduct.is_active) {
-            return NextResponse.json(
-                { error: "Sub-product not found or inactive." },
+                { error: "Parent product not found or inactive." },
                 { status: 404 }
             );
         }
 
-        if (!branch) {
-            return NextResponse.json(
-                { error: "Branch not found or inactive." },
-                { status: 404 }
-            );
+        // Find target branches
+        let targetBranchesQuery = supabase
+            .from("branches")
+            .select("id, name")
+            .eq("is_active", true);
+
+        if (!allBranches) {
+            targetBranchesQuery = targetBranchesQuery.eq("id", branchId);
         }
 
-        // Record transaction through Supabase RPC
-        const { data, error } = await supabase.rpc(
-            "record_sub_product_transaction",
-            {
-                p_branch_id: branchId,
-                p_sub_product_id: subProductId,
-                p_type: type,
-                p_quantity: quantity,
-                p_transaction_at: new Date(
-                    transactionAt
-                ).toISOString(),
-            }
-        );
+        const { data: targetBranches, error: branchesError } =
+            await targetBranchesQuery;
 
-        if (error) {
-            console.error(
-                "Sub-product transaction RPC:",
-                error
-            );
+        if (branchesError) throw branchesError;
 
+        if (!targetBranches?.length) {
             return NextResponse.json(
-                { error: error.message || "Unable to record transaction." },
+                { error: "No active branches found." },
                 { status: 400 }
             );
         }
 
+        // Reuse an existing active sub-product with the same name.
+        const { data: existingItems, error: existingError } =
+            await supabase
+                .from("sub_products")
+                .select("id, name, product_id")
+                .eq("product_id", productId)
+                .eq("is_active", true)
+                .eq("name", cleanName)
+                .limit(1);
+
+        if (existingError) throw existingError;
+
+        let subProduct;
+        let created = false;
+
+        if (existingItems?.length) {
+            subProduct = existingItems[0];
+        } else {
+            const { data, error } = await supabase
+                .from("sub_products")
+                .insert({
+                    product_id: productId,
+                    name: cleanName,
+                    image_url: imageUrl || null,
+                    is_active: true,
+                })
+                .select()
+                .single();
+
+            if (error) throw error;
+
+            subProduct = data;
+            created = true;
+        }
+
+        // Record initial stock as purchase transactions.
+        const completedBranches = [];
+
+        if (quantity > 0) {
+            for (const branch of targetBranches) {
+                const { error } = await supabase.rpc(
+                    "record_sub_product_transaction",
+                    {
+                        p_branch_id: branch.id,
+                        p_sub_product_id: subProduct.id,
+                        p_type: "purchase",
+                        p_quantity: quantity,
+                        p_transaction_at: new Date().toISOString(),
+                    }
+                );
+
+                if (error) {
+                    console.error(
+                        "Initial sub-product stock error:",
+                        error
+                    );
+
+                    return NextResponse.json(
+                        {
+                            error:
+                                "Sub-product was saved, but initial stock could not be added to every branch. Please check the quantities before retrying.",
+                            subProduct,
+                            completedBranches,
+                            partialSuccess: true,
+                        },
+                        { status: 500 }
+                    );
+                }
+
+                completedBranches.push(branch.name);
+            }
+        }
+
         return NextResponse.json({
             success: true,
-            transaction: data,
+            created,
+            subProduct,
+            branches: completedBranches,
         });
 
     } catch (error) {
-        console.error(
-            "Sub-product transaction API:",
-            error
-        );
+        console.error("Sub-product POST:", error);
 
         return NextResponse.json(
-            { error: "Unable to record transaction." },
+            { error: error.message || "Unable to create sub-product." },
             { status: 500 }
         );
     }
