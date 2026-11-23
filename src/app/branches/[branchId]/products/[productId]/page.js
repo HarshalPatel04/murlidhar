@@ -493,6 +493,35 @@ export default function ProductSubProductsPage() {
                                 />
                             </div>
 
+                            {/* PURCHASE VALUE - SALE ONLY */}
+                            {transactionType === "sale" && (
+                                <div className="mt-4 rounded-lg border border-blue-100 bg-blue-50/60 p-3">
+                                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-blue-700">
+                                        Purchase Value
+                                    </p>
+
+                                    <div className="flex justify-between text-sm">
+                                        <span className="text-neutral-600">
+                                            Purchase price per item
+                                        </span>
+                                        <span className="font-semibold text-neutral-900">
+                                            ₹{Number(selectedSubProduct.purchase_price || 0).toLocaleString("en-IN")}
+                                        </span>
+                                    </div>
+
+                                    <div className="mt-2 flex justify-between text-sm">
+                                        <span className="text-neutral-600">
+                                            Total purchase value ({quantity || 0} items)
+                                        </span>
+                                        <span className="font-semibold text-neutral-900">
+                                            ₹{(
+                                                Number(selectedSubProduct.purchase_price || 0) *
+                                                (Number(quantity) || 0)
+                                            ).toLocaleString("en-IN")}
+                                        </span>
+                                    </div>
+                                </div>
+                            )}
 
                             {/* TRANSACTION PRICE */}
                             <div className="mt-4">
@@ -529,6 +558,32 @@ export default function ProductSubProductsPage() {
                                         : "Prefilled with your default selling price"}
                                 </p>
                             </div>
+
+                            {transactionType === "sale" && (
+                                <div className="mt-3 flex items-center justify-between rounded-lg bg-neutral-50 px-3 py-3">
+                                    <span className="text-sm font-medium text-neutral-600">
+                                        Estimated Profit / Loss
+                                    </span>
+
+                                    {(() => {
+                                        const purchaseValue =
+                                            Number(selectedSubProduct.purchase_price || 0) *
+                                            Number(quantity || 0);
+
+                                        const profit = Number(sellingPrice || 0) - purchaseValue;
+
+                                        return (
+                                            <span
+                                                className={`font-semibold tabular-nums ${profit >= 0 ? "text-green-700" : "text-red-600"
+                                                    }`}
+                                            >
+                                                {profit >= 0 ? "+" : "-"}₹
+                                                {Math.abs(profit).toLocaleString("en-IN")}
+                                            </span>
+                                        );
+                                    })()}
+                                </div>
+                            )}
 
                             <div className="mt-4">
                                 <label className="block text-sm font-medium text-neutral-700">
