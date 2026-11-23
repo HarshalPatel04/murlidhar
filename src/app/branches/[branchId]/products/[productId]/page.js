@@ -20,6 +20,8 @@ export default function ProductSubProductsPage() {
     const [selectedSubProduct, setSelectedSubProduct] = useState(null);
     const [transactionType, setTransactionType] = useState("purchase");
     const [quantity, setQuantity] = useState("1");
+    const [purchasePrice, setPurchasePrice] = useState("");
+    const [sellingPrice, setSellingPrice] = useState("");
     const [transactionDate, setTransactionDate] = useState("");
     const [transactionTime, setTransactionTime] = useState("");
     const [saving, setSaving] = useState(false);
@@ -70,6 +72,7 @@ export default function ProductSubProductsPage() {
         }
     }, [productId, loadSubProducts]);
 
+
     function openTransaction(item, type) {
         const now = new Date();
 
@@ -87,11 +90,17 @@ export default function ProductSubProductsPage() {
         setSelectedSubProduct(item);
         setTransactionType(type);
         setQuantity("1");
+
+        // Load the latest saved prices
+        setPurchasePrice(String(item.purchase_price ?? ""));
+        setSellingPrice(String(item.selling_price ?? ""));
+
         setTransactionDate(localDate);
         setTransactionTime(localTime);
         setModalError("");
         setShowModal(true);
     }
+
 
     function closeModal() {
         if (saving) return;
@@ -115,6 +124,24 @@ export default function ProductSubProductsPage() {
             setModalError(
                 "Enter a valid quantity greater than zero."
             );
+            return;
+        }
+
+        const priceValue = Number(
+            transactionType === "purchase"
+                ? purchasePrice
+                : sellingPrice
+        );
+
+        if (
+            (transactionType === "purchase" && purchasePrice.trim() === "") ||
+            (transactionType === "sale" && sellingPrice.trim() === "") ||
+            !Number.isFinite(priceValue) ||
+            priceValue < 0 ||
+            priceValue > 9999999999.99 ||
+            Math.abs(priceValue * 100 - Math.round(priceValue * 100)) > 0.000001
+        ) {
+            setModalError("Please enter a valid price with up to 2 decimal places.");
             return;
         }
 
@@ -166,8 +193,18 @@ export default function ProductSubProductsPage() {
                         subProductId: selectedSubProduct.id,
                         type: transactionType,
                         quantity: quantityValue,
-                        transactionAt:
-                            transactionDateTime.toISOString(),
+                        transactionAt: transactionDateTime.toISOString(),
+
+                        ...(transactionType === "purchase"
+                            ? {
+                                purchasePrice: priceValue,
+                                sellingPrice: Number(
+                                    selectedSubProduct.selling_price ?? 0
+                                ),
+                            }
+                            : {
+                                transactionTotal: priceValue,
+                            }),
                     }),
                 }
             );
@@ -454,6 +491,43 @@ export default function ProductSubProductsPage() {
                                     required
                                     className="mt-2 h-11 w-full rounded-lg border border-neutral-300 px-3 text-sm outline-none focus:border-neutral-500"
                                 />
+                            </div>
+
+
+                            {/* TRANSACTION PRICE */}
+                            <div className="mt-4">
+                                <label className="block text-sm font-medium text-neutral-700">
+                                    {transactionType === "purchase"
+                                        ? "Purchase Price (₹)"
+                                        : "Total Negotiated Sale Amount (₹)"}
+                                </label>
+
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    required
+                                    value={
+                                        transactionType === "purchase"
+                                            ? purchasePrice
+                                            : sellingPrice
+                                    }
+                                    onChange={(event) => {
+                                        if (transactionType === "purchase") {
+                                            setPurchasePrice(event.target.value);
+                                        } else {
+                                            setSellingPrice(event.target.value);
+                                        }
+                                    }}
+                                    placeholder="Enter price"
+                                    className="mt-2 h-11 w-full rounded-lg border border-neutral-300 px-3 text-sm outline-none focus:border-neutral-500"
+                                />
+
+                                <p className="mt-1 text-xs text-neutral-400">
+                                    {transactionType === "purchase"
+                                        ? "Prefilled with your last purchase price"
+                                        : "Prefilled with your default selling price"}
+                                </p>
                             </div>
 
                             <div className="mt-4">

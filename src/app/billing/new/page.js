@@ -416,7 +416,7 @@ export default function NewBillPage() {
 
             setSuccess("Bill created successfully.");
 
-            router.push(`/billing/${billId}`);
+            router.push("/billing");
         } catch (err) {
             console.error(err);
             setError(err.message || "Unable to create bill.");
@@ -557,7 +557,13 @@ export default function NewBillPage() {
                                         className="flex items-center justify-between gap-4 py-4"
                                     >
                                         <div className="min-w-0">
-                                            <p className="font-medium text-neutral-900">
+                                            <p className="text-sm font-medium text-neutral-500">
+                                                {[product.brandName, product.productName, product.categoryName]
+                                                    .filter(Boolean)
+                                                    .join(" · ")}
+                                            </p>
+
+                                            <p className="mt-1 font-medium text-neutral-900">
                                                 {product.name}
                                             </p>
 

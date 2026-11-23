@@ -43,21 +43,29 @@ export default function ManagePage() {
     const [subProductLoading, setSubProductLoading] = useState(false);
     const [subProductSaving, setSubProductSaving] = useState(false);
     const [showSubProductForm, setShowSubProductForm] = useState(false);
+
     const [subProductForm, setSubProductForm] = useState({
         name: "",
         imageUrl: "",
         branchId: "",
         allBranches: false,
         quantity: "0",
+        purchasePrice: "0",
+        sellingPrice: "0",
     });
+
     const [editingSubProduct, setEditingSubProduct] = useState(null);
     const [editingSubProductStock, setEditingSubProductStock] = useState(null);
+
     const [subProductStockForm, setSubProductStockForm] = useState({
         type: "purchase",
         quantity: "1",
         date: new Date().toLocaleDateString("en-CA"),
         time: new Date().toTimeString().slice(0, 5),
+        purchasePrice: "0",
+        sellingPrice: "0",
     });
+
     const [subProductStockSaving, setSubProductStockSaving] = useState(false);
 
     const [editingStock, setEditingStock] = useState(null);
@@ -86,6 +94,7 @@ export default function ManagePage() {
                         `/api/manage?type=${section.key}`,
                         { cache: "no-store" }
                     );
+
                     const result = await response.json();
 
                     if (!response.ok) {
@@ -102,6 +111,7 @@ export default function ManagePage() {
                 "/api/manage/products",
                 { cache: "no-store" }
             );
+
             const productResult = await productResponse.json();
 
             if (!productResponse.ok) {
@@ -143,8 +153,8 @@ export default function ManagePage() {
                 `/api/manage/sub-products?productId=${productId}`,
                 { cache: "no-store" }
             );
-            const responseText = await response.text();
 
+            const responseText = await response.text();
             let result = {};
 
             try {
@@ -160,14 +170,9 @@ export default function ManagePage() {
                     result.error || `Request failed (${response.status}).`
                 );
             }
-            
-            if (!response.ok) {
-                throw new Error(
-                    result.error || "Failed to load sub-products."
-                );
-            }
 
             setSubProducts(result.data || []);
+
             setSubProductBranches(
                 (result.branches || []).filter(
                     (branch) => branch.is_active
@@ -188,7 +193,10 @@ export default function ManagePage() {
             branchId: subProductBranches[0]?.id || "",
             allBranches: false,
             quantity: "0",
+            purchasePrice: "0",
+            sellingPrice: "0",
         });
+
         setEditingSubProduct(null);
         setShowSubProductForm(true);
     }
@@ -196,6 +204,8 @@ export default function ManagePage() {
     async function saveSubProduct() {
         const cleanName = subProductForm.name.trim();
         const quantity = Number(subProductForm.quantity);
+        const purchasePrice = Number(subProductForm.purchasePrice);
+        const sellingPrice = Number(subProductForm.sellingPrice);
         const isEditing = Boolean(editingSubProduct);
 
         if (!subProductParent) {
@@ -208,8 +218,21 @@ export default function ManagePage() {
             return;
         }
 
-        if (!cleanName || !productForm.categoryId) {
-            setError("Please enter valid product details.");
+        if (
+            !Number.isFinite(purchasePrice) ||
+            purchasePrice < 0 ||
+            !Number.isFinite(sellingPrice) ||
+            sellingPrice < 0
+        ) {
+            setError("Please enter valid purchase and selling prices.");
+            return;
+        }
+
+        if (
+            !isEditing &&
+            (!Number.isSafeInteger(quantity) || quantity < 0)
+        ) {
+            setError("Please enter a valid initial quantity.");
             return;
         }
 
@@ -237,6 +260,8 @@ export default function ManagePage() {
                             name: cleanName,
                             imageUrl: subProductForm.imageUrl.trim() || null,
                             isActive: editingSubProduct.is_active,
+                            purchasePrice,
+                            sellingPrice,
                         }
                         : {
                             productId: subProductParent,
@@ -245,6 +270,8 @@ export default function ManagePage() {
                             branchId: subProductForm.branchId,
                             allBranches: subProductForm.allBranches,
                             quantity,
+                            purchasePrice,
+                            sellingPrice,
                         }
                 ),
             });
@@ -259,6 +286,7 @@ export default function ManagePage() {
 
             setShowSubProductForm(false);
             setEditingSubProduct(null);
+
             await loadSubProducts(subProductParent);
         } catch (error) {
             console.error("Save sub-product:", error);
@@ -279,16 +307,36 @@ export default function ManagePage() {
             quantity: "1",
             date: new Date().toLocaleDateString("en-CA"),
             time: new Date().toTimeString().slice(0, 5),
+            purchasePrice: String(item.purchase_price ?? 0),
+            sellingPrice: String(item.selling_price ?? 0),
         });
     }
+
 
     async function saveSubProductStock() {
         if (!editingSubProductStock || subProductStockSaving) return;
 
         const quantity = Number(subProductStockForm.quantity);
+        const purchasePrice = Number(subProductStockForm.purchasePrice);
+        const sellingPrice = Number(subProductStockForm.sellingPrice);
+        const isPurchase = subProductStockForm.type === "purchase";
 
         if (!Number.isSafeInteger(quantity) || quantity <= 0) {
             setError("Please enter a valid quantity.");
+            return;
+        }
+
+        const transactionPrice = isPurchase ? purchasePrice : sellingPrice;
+
+        if (
+            !Number.isFinite(transactionPrice) ||
+            transactionPrice < 0
+        ) {
+            setError(
+                isPurchase
+                    ? "Please enter a valid purchase price."
+                    : "Please enter a valid negotiated selling price."
+            );
             return;
         }
 
@@ -310,6 +358,26 @@ export default function ManagePage() {
         setError("");
 
         try {
+            const payload = {
+                branchId: editingSubProductStock.branch.id,
+                subProductId: editingSubProductStock.subProduct.id,
+                type: subProductStockForm.type,
+                quantity,
+                transactionAt: transactionDate.toISOString(),
+            };
+
+            if (isPurchase) {
+                payload.purchasePrice = purchasePrice;
+
+                // Preserve the existing default selling price.
+                payload.sellingPrice = Number(
+                    editingSubProductStock.subProduct.selling_price ?? 0
+                );
+            } else {
+                // Save the negotiated price for this sale only.
+                payload.unitPrice = sellingPrice;
+            }
+
             const response = await fetch(
                 "/api/inventory/sub-product-transaction",
                 {
@@ -317,13 +385,7 @@ export default function ManagePage() {
                     headers: {
                         "Content-Type": "application/json",
                     },
-                    body: JSON.stringify({
-                        branchId: editingSubProductStock.branch.id,
-                        subProductId: editingSubProductStock.subProduct.id,
-                        type: subProductStockForm.type,
-                        quantity,
-                        transactionAt: transactionDate.toISOString(),
-                    }),
+                    body: JSON.stringify(payload),
                 }
             );
 
@@ -336,7 +398,6 @@ export default function ManagePage() {
             }
 
             setEditingSubProductStock(null);
-
             await loadSubProducts(subProductParent);
         } catch (err) {
             setError(err.message || "Something went wrong.");
@@ -344,6 +405,7 @@ export default function ManagePage() {
             setSubProductStockSaving(false);
         }
     }
+
 
     useEffect(() => {
         loadData();
@@ -448,8 +510,6 @@ export default function ManagePage() {
         setProductModal({ mode: "add" });
     }
 
-
-
     async function openEditProductModal(product) {
         setProductForm({
             name: product.name,
@@ -462,14 +522,12 @@ export default function ManagePage() {
 
         setProductModal({ mode: "edit", product });
 
-        // Load this parent's sub-products
         setSubProductParent(product.id);
         setShowSubProductForm(false);
         setEditingSubProduct(null);
 
         await loadSubProducts(product.id);
     }
-
     async function saveProduct() {
         const cleanName = productForm.name.trim();
         const quantity = Number(productForm.quantity);
@@ -683,67 +741,63 @@ export default function ManagePage() {
                                                     : "No products found."}
                                             </p>
                                         ) : (
-                                            products.map((product) => {
+                                            products.map((product) => (
+                                                <div
+                                                    key={product.id}
+                                                    className={`rounded-xl border border-black/10 p-3 ${!product.is_active ? "opacity-50" : ""
+                                                        }`}
+                                                >
+                                                    <div className="flex items-start justify-between gap-2">
+                                                        <div className="min-w-0">
+                                                            <h3 className="truncate font-semibold">
+                                                                {product.name}
+                                                            </h3>
 
-                                                return (
-                                                    <div
-                                                        key={product.id}
-                                                        className={`rounded-xl border border-black/10 p-3 ${!product.is_active ? "opacity-50" : ""
-                                                            }`}
-                                                    >
-                                                        <div className="flex items-start justify-between gap-2">
-                                                            <div className="min-w-0">
-                                                                <h3 className="truncate font-semibold">
-                                                                    {product.name}
-                                                                </h3>
-
-                                                                <p className="mt-1 text-xs text-black/50">
-                                                                    {product.category_name}
-                                                                    {product.brand_name
-                                                                        ? ` · ${product.brand_name}`
-                                                                        : ""}
-                                                                </p>
-                                                            </div>
-
-                                                            <button
-                                                                type="button"
-                                                                onClick={() =>
-                                                                    openEditProductModal(product)
-                                                                }
-                                                                className="shrink-0 rounded-lg bg-black/5 px-2 py-1 text-xs hover:bg-black/15"
-                                                            >
-                                                                Edit
-                                                            </button>
-                                                        </div>
-
-                                                        <div className="mt-3 space-y-1.5 border-t border-black/5 pt-3">
-                                                            {(product.branches || [])
-                                                                .filter((branch) => branch.is_active)
-                                                                .map((branch) => (
-                                                                    <div
-                                                                        key={branch.id}
-                                                                        className="flex items-center justify-between gap-2 rounded-lg bg-black/[0.025] px-2.5 py-2"
-                                                                    >
-                                                                        <span className="truncate text-xs text-black/60">
-                                                                            {branch.name}
-                                                                        </span>
-
-                                                                        <span className="shrink-0 rounded-md bg-black/5 px-2 py-1 text-xs font-semibold tabular-nums">
-                                                                            {branch.quantity}
-                                                                        </span>
-
-                                                                    </div>
-                                                                ))}
-                                                        </div>
-
-                                                        {!product.is_active && (
-                                                            <p className="mt-2 text-[10px] text-red-500">
-                                                                Inactive product
+                                                            <p className="mt-1 text-xs text-black/50">
+                                                                {product.category_name}
+                                                                {product.brand_name
+                                                                    ? ` · ${product.brand_name}`
+                                                                    : ""}
                                                             </p>
-                                                        )}
+                                                        </div>
+
+                                                        <button
+                                                            type="button"
+                                                            onClick={() =>
+                                                                openEditProductModal(product)
+                                                            }
+                                                            className="shrink-0 rounded-lg bg-black/5 px-2 py-1 text-xs hover:bg-black/15"
+                                                        >
+                                                            Edit
+                                                        </button>
                                                     </div>
-                                                );
-                                            })
+
+                                                    <div className="mt-3 space-y-1.5 border-t border-black/5 pt-3">
+                                                        {(product.branches || [])
+                                                            .filter((branch) => branch.is_active)
+                                                            .map((branch) => (
+                                                                <div
+                                                                    key={branch.id}
+                                                                    className="flex items-center justify-between gap-2 rounded-lg bg-black/[0.025] px-2.5 py-2"
+                                                                >
+                                                                    <span className="truncate text-xs text-black/60">
+                                                                        {branch.name}
+                                                                    </span>
+
+                                                                    <span className="shrink-0 rounded-md bg-black/5 px-2 py-1 text-xs font-semibold tabular-nums">
+                                                                        {branch.quantity}
+                                                                    </span>
+                                                                </div>
+                                                            ))}
+                                                    </div>
+
+                                                    {!product.is_active && (
+                                                        <p className="mt-2 text-[10px] text-red-500">
+                                                            Inactive product
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            ))
                                         )}
                                     </div>
                                 </section>
@@ -982,7 +1036,6 @@ export default function ManagePage() {
                             </div>
                         </div>
 
-
                         {/* SUB-PRODUCTS MANAGER - EDIT MODE ONLY */}
                         {productModal.mode === "edit" && (
                             <div className="mt-6 border-t border-black/10 pt-5">
@@ -1052,6 +1105,8 @@ export default function ManagePage() {
                                                                 branchId: "",
                                                                 allBranches: false,
                                                                 quantity: "0",
+                                                                purchasePrice: String(item.purchase_price ?? 0),
+                                                                sellingPrice: String(item.selling_price ?? 0),
                                                             });
                                                             setShowSubProductForm(true);
                                                         }}
@@ -1059,6 +1114,26 @@ export default function ManagePage() {
                                                     >
                                                         Edit
                                                     </button>
+                                                </div>
+
+                                                {/* PRICES */}
+                                                <div className="mt-3 grid grid-cols-2 gap-2 rounded-lg bg-black/[0.025] p-3">
+                                                    <div>
+                                                        <p className="text-[10px] text-black/45">
+                                                            Purchase Price
+                                                        </p>
+                                                        <p className="mt-1 text-sm font-semibold tabular-nums">
+                                                            ₹{Number(item.purchase_price || 0).toFixed(2)}
+                                                        </p>
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-[10px] text-black/45">
+                                                            Selling Price
+                                                        </p>
+                                                        <p className="mt-1 text-sm font-semibold tabular-nums">
+                                                            ₹{Number(item.selling_price || 0).toFixed(2)}
+                                                        </p>
+                                                    </div>
                                                 </div>
 
                                                 <div className="mt-4 space-y-2 border-t border-black/5 pt-3">
@@ -1128,7 +1203,6 @@ export default function ManagePage() {
                     </div>
                 </div>
             )}
-
             {/* UPDATE PRODUCT STOCK MODAL */}
             {editingStock && (
                 <div
@@ -1239,6 +1313,49 @@ export default function ManagePage() {
                                 />
                             </div>
 
+                            {/* PURCHASE AND SELLING PRICES */}
+                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                <div>
+                                    <label className="mb-1 block text-sm font-medium text-gray-700">
+                                        Purchase Price (₹)
+                                    </label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value={subProductForm.purchasePrice}
+                                        onChange={(event) =>
+                                            setSubProductForm((prev) => ({
+                                                ...prev,
+                                                purchasePrice: event.target.value,
+                                            }))
+                                        }
+                                        placeholder="0.00"
+                                        className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-black"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="mb-1 block text-sm font-medium text-gray-700">
+                                        Selling Price (₹)
+                                    </label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value={subProductForm.sellingPrice}
+                                        onChange={(event) =>
+                                            setSubProductForm((prev) => ({
+                                                ...prev,
+                                                sellingPrice: event.target.value,
+                                            }))
+                                        }
+                                        placeholder="0.00"
+                                        className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-black"
+                                    />
+                                </div>
+                            </div>
+
                             {!editingSubProduct && (
                                 <>
                                     <div className="flex items-center gap-3">
@@ -1339,129 +1456,155 @@ export default function ManagePage() {
 
             {/* SUB-PRODUCT STOCK TRANSACTION MODAL */}
             {editingSubProductStock && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
-                    <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-
-                        <div className="mb-5">
-                            <h2 className="text-xl font-bold text-black">
-                                Record Stock Transaction
+                <div className="fixed inset-0 z-[110] flex items-center justify-center overflow-y-auto bg-black/50 p-4">
+                    <div className="my-auto w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+                        <div className="mb-6">
+                            <h2 className="text-xl font-semibold text-gray-900">
+                                Update Sub-Product Stock
                             </h2>
-
-                            <p className="mt-1 text-sm text-black/50">
+                            <p className="mt-1 text-sm text-gray-500">
                                 {editingSubProductStock.subProduct.name}
-                                {" · "}
+                            </p>
+                            <p className="text-sm text-gray-500">
                                 {editingSubProductStock.branch.name}
                             </p>
                         </div>
 
-                        {/* TRANSACTION TYPE */}
-                        <div className="mb-4">
-                            <label className="mb-2 block text-sm font-semibold text-black">
-                                Transaction Type
-                            </label>
-
-                            <div className="grid grid-cols-2 gap-2">
-                                <button
-                                    type="button"
-                                    onClick={() =>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="mb-1 block text-sm font-medium text-gray-700">
+                                    Transaction Type
+                                </label>
+                                <select
+                                    value={subProductStockForm.type}
+                                    onChange={(event) =>
                                         setSubProductStockForm((prev) => ({
                                             ...prev,
-                                            type: "purchase",
+                                            type: event.target.value,
                                         }))
                                     }
-                                    className={`rounded-xl border px-4 py-3 text-sm font-semibold ${subProductStockForm.type === "purchase"
-                                        ? "border-green-600 bg-green-50 text-green-700"
-                                        : "border-black/10 text-black/60"
-                                        }`}
+                                    className="w-full rounded-xl border border-gray-300 px-4 py-3"
                                 >
-                                    Purchase (+)
-                                </button>
+                                    <option value="purchase">Purchase / Add Stock</option>
+                                    <option value="sale">Sale / Remove Stock</option>
+                                </select>
+                            </div>
 
-                                <button
-                                    type="button"
-                                    onClick={() =>
+                            {/* PRICES ARE EDITABLE ONLY FOR PURCHASES */}
+
+                            {/* TRANSACTION PRICE */}
+                            {subProductStockForm.type === "purchase" ? (
+                                <div>
+                                    <label className="mb-1 block text-sm font-medium text-gray-700">
+                                        Purchase Price (₹)
+                                    </label>
+
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value={subProductStockForm.purchasePrice}
+                                        onChange={(event) =>
+                                            setSubProductStockForm((prev) => ({
+                                                ...prev,
+                                                purchasePrice: event.target.value,
+                                            }))
+                                        }
+                                        placeholder="Enter purchase price"
+                                        className="w-full rounded-xl border border-gray-300 px-4 py-3"
+                                    />
+
+                                    <p className="mt-1 text-xs text-gray-400">
+                                        Default: Last saved purchase price
+                                    </p>
+                                </div>
+                            ) : (
+                                <div>
+                                    <label className="mb-1 block text-sm font-medium text-gray-700">
+                                        Negotiated Selling Price (₹)
+                                    </label>
+
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value={subProductStockForm.sellingPrice}
+                                        onChange={(event) =>
+                                            setSubProductStockForm((prev) => ({
+                                                ...prev,
+                                                sellingPrice: event.target.value,
+                                            }))
+                                        }
+                                        placeholder="Enter negotiated selling price"
+                                        className="w-full rounded-xl border border-gray-300 px-4 py-3"
+                                    />
+
+                                    <p className="mt-1 text-xs text-gray-400">
+                                        Default: Current selling price
+                                    </p>
+                                </div>
+                            )}
+
+                            <div>
+                                <label className="mb-1 block text-sm font-medium text-gray-700">
+                                    Quantity
+                                </label>
+                                <input
+                                    type="number"
+                                    min="1"
+                                    step="1"
+                                    value={subProductStockForm.quantity}
+                                    onChange={(event) =>
                                         setSubProductStockForm((prev) => ({
                                             ...prev,
-                                            type: "sale",
+                                            quantity: event.target.value,
                                         }))
                                     }
-                                    className={`rounded-xl border px-4 py-3 text-sm font-semibold ${subProductStockForm.type === "sale"
-                                        ? "border-red-600 bg-red-50 text-red-700"
-                                        : "border-black/10 text-black/60"
-                                        }`}
-                                >
-                                    Sale (-)
-                                </button>
+                                    className="w-full rounded-xl border border-gray-300 px-4 py-3"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="mb-1 block text-sm font-medium text-gray-700">
+                                    Transaction Date
+                                </label>
+                                <input
+                                    type="date"
+                                    value={subProductStockForm.date}
+                                    onChange={(event) =>
+                                        setSubProductStockForm((prev) => ({
+                                            ...prev,
+                                            date: event.target.value,
+                                        }))
+                                    }
+                                    className="w-full rounded-xl border border-gray-300 px-4 py-3"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="mb-1 block text-sm font-medium text-gray-700">
+                                    Transaction Time
+                                </label>
+                                <input
+                                    type="time"
+                                    value={subProductStockForm.time}
+                                    onChange={(event) =>
+                                        setSubProductStockForm((prev) => ({
+                                            ...prev,
+                                            time: event.target.value,
+                                        }))
+                                    }
+                                    className="w-full rounded-xl border border-gray-300 px-4 py-3"
+                                />
                             </div>
                         </div>
 
-                        {/* QUANTITY */}
-                        <div className="mb-4">
-                            <label className="mb-2 block text-sm font-semibold text-black">
-                                Quantity
-                            </label>
-
-                            <input
-                                type="number"
-                                min="1"
-                                step="1"
-                                value={subProductStockForm.quantity}
-                                onChange={(e) =>
-                                    setSubProductStockForm((prev) => ({
-                                        ...prev,
-                                        quantity: e.target.value,
-                                    }))
-                                }
-                                placeholder="Enter quantity"
-                                className="w-full rounded-xl border border-black/10 px-4 py-3 text-sm outline-none focus:border-black"
-                            />
-                        </div>
-
-                        {/* DATE */}
-                        <div className="mb-4">
-                            <label className="mb-2 block text-sm font-semibold text-black">
-                                Transaction Date
-                            </label>
-
-                            <input
-                                type="date"
-                                value={subProductStockForm.date}
-                                onChange={(e) =>
-                                    setSubProductStockForm((prev) => ({
-                                        ...prev,
-                                        date: e.target.value,
-                                    }))
-                                }
-                                className="w-full rounded-xl border border-black/10 px-4 py-3 text-sm outline-none focus:border-black"
-                            />
-                        </div>
-
-                        {/* TIME */}
-                        <div className="mb-5">
-                            <label className="mb-2 block text-sm font-semibold text-black">
-                                Transaction Time
-                            </label>
-
-                            <input
-                                type="time"
-                                value={subProductStockForm.time}
-                                onChange={(e) =>
-                                    setSubProductStockForm((prev) => ({
-                                        ...prev,
-                                        time: e.target.value,
-                                    }))
-                                }
-                                className="w-full rounded-xl border border-black/10 px-4 py-3 text-sm outline-none focus:border-black"
-                            />
-                        </div>
-
-                        {/* ACTIONS */}
-                        <div className="flex gap-3">
+                        <div className="mt-6 flex justify-end gap-3">
                             <button
                                 type="button"
                                 onClick={() => setEditingSubProductStock(null)}
                                 disabled={subProductStockSaving}
-                                className="flex-1 rounded-xl border border-black/10 px-4 py-3 text-sm font-semibold text-black/70 hover:bg-black/5 disabled:opacity-50"
+                                className="rounded-xl border border-gray-300 px-5 py-3 text-sm font-medium"
                             >
                                 Cancel
                             </button>
@@ -1470,12 +1613,11 @@ export default function ManagePage() {
                                 type="button"
                                 onClick={saveSubProductStock}
                                 disabled={subProductStockSaving}
-                                className="flex-1 rounded-xl bg-black px-4 py-3 text-sm font-semibold text-white hover:bg-black/80 disabled:opacity-50"
+                                className="rounded-xl bg-black px-5 py-3 text-sm font-medium text-white disabled:opacity-50"
                             >
                                 {subProductStockSaving ? "Saving..." : "Save Transaction"}
                             </button>
                         </div>
-
                     </div>
                 </div>
             )}

@@ -34,6 +34,9 @@ export default function BillingPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
 
+    const [downloadFrom, setDownloadFrom] = useState("");
+    const [downloadTo, setDownloadTo] = useState("");
+
     const loadBranches = useCallback(async () => {
         const supabase = createClient();
 
@@ -99,6 +102,24 @@ export default function BillingPage() {
         0
     );
 
+    const downloadSalesHistory = () => {
+        if (downloadFrom && downloadTo && downloadFrom > downloadTo) {
+            alert("From date cannot be later than To date.");
+            return;
+        }
+
+        const params = new URLSearchParams();
+
+        params.set("export", "csv");
+
+        if (branchId) params.set("branchId", branchId);
+        if (search.trim()) params.set("search", search.trim());
+        if (downloadFrom) params.set("from", downloadFrom);
+        if (downloadTo) params.set("to", downloadTo);
+
+        window.location.href = `/api/bills?${params.toString()}`;
+    };
+
     return (
         <main className="min-h-screen bg-neutral-50">
             {/* HEADER */}
@@ -146,12 +167,67 @@ export default function BillingPage() {
                         </p>
                     </div>
 
-                    <Link
-                        href="/billing/new"
-                        className="rounded-lg bg-neutral-900 px-5 py-3 text-sm font-medium text-white hover:bg-neutral-700"
-                    >
-                        + Create New Bill
-                    </Link>
+
+                    <div className="flex flex-wrap items-end gap-3">
+                        <div>
+                            <label className="mb-1 block text-xs font-medium text-neutral-500">
+                                Download From
+                            </label>
+                            <input
+                                type="date"
+                                value={downloadFrom}
+                                onChange={(e) => setDownloadFrom(e.target.value)}
+                                className="h-11 rounded-lg border border-neutral-300 px-3 text-sm"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="mb-1 block text-xs font-medium text-neutral-500">
+                                Download To
+                            </label>
+                            <input
+                                type="date"
+                                value={downloadTo}
+                                min={downloadFrom || undefined}
+                                onChange={(e) => setDownloadTo(e.target.value)}
+                                className="h-11 rounded-lg border border-neutral-300 px-3 text-sm"
+                            />
+                        </div>
+
+                        <button
+                            type="button"
+                            onClick={downloadSalesHistory}
+                            className="flex h-11 items-center gap-2 rounded-lg border border-neutral-300 bg-white px-5 text-sm font-medium text-neutral-700 hover:bg-neutral-100"
+                        >
+                            <span>↓</span>
+                            Download History
+                        </button>
+
+                        <Link
+                            href="/billing/new"
+                            className="flex h-11 items-center rounded-lg bg-neutral-900 px-5 text-sm font-medium text-white hover:bg-neutral-700"
+                        >
+                            + Create New Bill
+                        </Link>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-3">
+                        <button
+                            type="button"
+                            onClick={downloadSalesHistory}
+                            className="flex items-center gap-2 rounded-lg border border-neutral-300 bg-white px-5 py-3 text-sm font-medium text-neutral-700 hover:bg-neutral-100"
+                        >
+                            <span>↓</span>
+                            Download History
+                        </button>
+
+                        <Link
+                            href="/billing/new"
+                            className="rounded-lg bg-neutral-900 px-5 py-3 text-sm font-medium text-white hover:bg-neutral-700"
+                        >
+                            + Create New Bill
+                        </Link>
+                    </div>
                 </div>
 
                 {/* SUMMARY */}
@@ -223,7 +299,7 @@ export default function BillingPage() {
                 <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
                     <div className="border-b border-neutral-200 px-5 py-4">
                         <h2 className="font-semibold text-neutral-900">
-                            Bill History
+                            Sales History
                         </h2>
                     </div>
 
@@ -276,7 +352,6 @@ export default function BillingPage() {
                                         <th className="px-5 py-3">Date</th>
                                         <th className="px-5 py-3">Amount</th>
                                         <th className="px-5 py-3">Status</th>
-                                        <th className="px-5 py-3">Action</th>
                                     </tr>
                                 </thead>
 
@@ -284,15 +359,20 @@ export default function BillingPage() {
                                     {bills.map((bill) => (
                                         <tr key={bill.id} className="hover:bg-neutral-50">
                                             <td className="whitespace-nowrap px-5 py-4 font-medium text-neutral-900">
-                                                {bill.bill_number}
+                                                {bill.type === "manual_sale"
+                                                    ? "Manual Sale"
+                                                    : bill.bill_number}
                                             </td>
 
                                             <td className="px-5 py-4">
                                                 <p className="font-medium text-neutral-800">
                                                     {bill.customer_name || "Walk-in customer"}
                                                 </p>
+
                                                 <p className="text-xs text-neutral-400">
-                                                    {bill.customer_phone || "—"}
+                                                    {bill.type === "manual_sale"
+                                                        ? `Quantity: ${bill.quantity}`
+                                                        : bill.customer_phone || "—"}
                                                 </p>
                                             </td>
 
@@ -305,26 +385,24 @@ export default function BillingPage() {
                                             </td>
 
                                             <td className="whitespace-nowrap px-5 py-4 font-semibold text-neutral-900">
-                                                {formatCurrency(bill.total_amount)}
+                                                {bill.total_amount == null
+                                                    ? "—"
+                                                    : formatCurrency(bill.total_amount)}
                                             </td>
 
                                             <td className="px-5 py-4">
-                                                <span className={`rounded-full px-2.5 py-1 text-xs ${bill.status === "completed"
+                                                <span className={`rounded-full px-2.5 py-1 text-xs ${bill.type === "manual_sale"
+                                                    ? "bg-blue-50 text-blue-700"
+                                                    : bill.status === "completed"
                                                         ? "bg-green-50 text-green-700"
                                                         : "bg-neutral-100 text-neutral-600"
                                                     }`}>
-                                                    {bill.status}
+                                                    {bill.type === "manual_sale"
+                                                        ? "Manual Sale"
+                                                        : bill.status}
                                                 </span>
                                             </td>
 
-                                            <td className="whitespace-nowrap px-5 py-4">
-                                                <Link
-                                                    href={`/billing/${bill.id}`}
-                                                    className="font-medium text-neutral-700 underline underline-offset-4 hover:text-black"
-                                                >
-                                                    View bill
-                                                </Link>
-                                            </td>
                                         </tr>
                                     ))}
                                 </tbody>

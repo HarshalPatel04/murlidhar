@@ -12,9 +12,40 @@ export const runtime = "nodejs";
 const UUID =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+function validatePrice(value, fieldName, required = false) {
+    if (value === undefined || value === null || value === "") {
+        if (required) {
+            return {
+                valid: false,
+                error: `${fieldName} is required.`,
+            };
+        }
+
+        return { valid: true, value: null };
+    }
+
+    const price = Number(value);
+
+    if (
+        !Number.isFinite(price) ||
+        price < 0 ||
+        price > 9999999999.99 ||
+        Math.abs(price * 100 - Math.round(price * 100)) > 0.000001
+    ) {
+        return {
+            valid: false,
+            error: `${fieldName} must be a valid non-negative amount with up to 2 decimal places.`,
+        };
+    }
+
+    return {
+        valid: true,
+        value: Number(price.toFixed(2)),
+    };
+}
+
 export async function POST(request) {
     try {
-        // Verify owner session
         const cookieStore = await cookies();
         const token = cookieStore.get(getOwnerCookieName())?.value;
 
@@ -35,9 +66,11 @@ export async function POST(request) {
             type,
             quantity,
             transactionAt,
+            purchasePrice,
+            sellingPrice,
+            transactionTotal,
         } = body;
 
-        // Validate IDs
         if (
             !UUID.test(branchId || "") ||
             !UUID.test(subProductId || "")
@@ -48,7 +81,6 @@ export async function POST(request) {
             );
         }
 
-        // Validate transaction type
         if (!["purchase", "sale"].includes(type)) {
             return NextResponse.json(
                 { error: "Invalid transaction type." },
@@ -56,7 +88,6 @@ export async function POST(request) {
             );
         }
 
-        // Validate quantity
         if (
             !Number.isSafeInteger(quantity) ||
             quantity <= 0
@@ -67,7 +98,6 @@ export async function POST(request) {
             );
         }
 
-        // Validate transaction date
         if (
             typeof transactionAt !== "string" ||
             Number.isNaN(Date.parse(transactionAt))
@@ -78,9 +108,34 @@ export async function POST(request) {
             );
         }
 
+        const price = type === "purchase"
+            ? validatePrice(purchasePrice, "Purchase price", true)
+            : validatePrice(
+                transactionTotal,
+                "Total negotiated selling amount",
+                true
+            );
+
+        if (!price.valid) {
+            return NextResponse.json(
+                { error: price.error },
+                { status: 400 }
+            );
+        }
+
+        const selling = type === "purchase"
+            ? validatePrice(sellingPrice, "Selling price")
+            : { valid: true, value: null };
+
+        if (!selling.valid) {
+            return NextResponse.json(
+                { error: selling.error },
+                { status: 400 }
+            );
+        }
+
         const supabase = createAdminClient();
 
-        // Validate active sub-product and branch
         const [
             { data: subProduct, error: subProductError },
             { data: branch, error: branchError },
@@ -125,25 +180,37 @@ export async function POST(request) {
             );
         }
 
-        // Record stock transaction
+        const rpcArgs = {
+            p_branch_id: branchId,
+            p_sub_product_id: subProductId,
+            p_type: type,
+            p_quantity: quantity,
+            p_transaction_at: new Date(
+                transactionAt
+            ).toISOString(),
+        };
+
+        if (type === "purchase") {
+            rpcArgs.p_purchase_price = price.value;
+            rpcArgs.p_selling_price = selling.value;
+        } else {
+            rpcArgs.p_transaction_total = price.value;
+        }
+
         const { data, error } = await supabase.rpc(
             "record_sub_product_transaction",
-            {
-                p_branch_id: branchId,
-                p_sub_product_id: subProductId,
-                p_type: type,
-                p_quantity: quantity,
-                p_transaction_at: new Date(
-                    transactionAt
-                ).toISOString(),
-            }
+            rpcArgs
         );
 
         if (error) {
             console.error("Sub-product transaction RPC:", error);
 
             return NextResponse.json(
-                { error: error.message || "Unable to record transaction." },
+                {
+                    error:
+                        error.message ||
+                        "Unable to record transaction.",
+                },
                 { status: 400 }
             );
         }
@@ -152,7 +219,6 @@ export async function POST(request) {
             success: true,
             transaction: data,
         });
-
     } catch (error) {
         console.error("Sub-product transaction API:", error);
 

@@ -1,6 +1,4 @@
 
-// src/app/api/bills/products/route.js
-
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -78,21 +76,50 @@ export async function GET(request) {
 
         if (productError) throw productError;
 
-        const productIds = (products || []).map((item) => item.id);
-
-        if (productIds.length === 0) {
+        if (!products?.length) {
             return NextResponse.json({
                 success: true,
                 data: [],
             });
         }
 
+        const subProductIds = products.map((item) => item.id);
+
+        const parentProductIds = [
+            ...new Set(products.map((item) => item.product_id)),
+        ];
+
+        // Load parent product names and their brand names.
+        const { data: parentProducts, error: parentError } =
+            await supabase
+                .from("products")
+                .select(`
+            id,
+            name,
+            brands:brand_id (id, name),
+            categories:category_id (id, name)
+        `)
+                .in("id", parentProductIds);
+
+        if (parentError) throw parentError;
+
+        const parentProductMap = new Map(
+            (parentProducts || []).map((item) => [
+                item.id,
+                {
+                    productName: item.name,
+                    brandName: item.brands?.name || "",
+                    categoryName: item.categories?.name || "",
+                },
+            ])
+        );
+
         const { data: inventory, error: inventoryError } =
             await supabase
                 .from("sub_product_inventory")
                 .select("sub_product_id, quantity")
                 .eq("branch_id", branchId)
-                .in("sub_product_id", productIds);
+                .in("sub_product_id", subProductIds);
 
         if (inventoryError) throw inventoryError;
 
@@ -103,20 +130,28 @@ export async function GET(request) {
             ])
         );
 
-        const result = (products || []).map((product) => ({
-            id: product.id,
-            productId: product.product_id,
-            name: product.name,
-            imageUrl: product.image_url,
-            purchasePrice: Number(product.purchase_price || 0),
-            sellingPrice: Number(product.selling_price || 0),
-            stock: stockMap.get(product.id) || 0,
-        }));
+        const result = products.map((product) => {
+            const parent = parentProductMap.get(product.product_id) || {};
+
+            return {
+                id: product.id,
+                productId: product.product_id,
+                brandName: parent.brandName || "",
+                productName: parent.productName || "",
+                categoryName: parent.categoryName || "",
+                name: product.name,
+                imageUrl: product.image_url,
+                purchasePrice: Number(product.purchase_price || 0),
+                sellingPrice: Number(product.selling_price || 0),
+                stock: stockMap.get(product.id) || 0,
+            };
+        });
 
         return NextResponse.json({
             success: true,
             data: result,
         });
+
     } catch (error) {
         console.error("Bill products GET:", error);
 

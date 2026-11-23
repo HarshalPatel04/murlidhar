@@ -20,7 +20,9 @@ async function isAuthorizedOwner() {
     return await verifyOwnerSession(token);
 }
 
-// GET: Bill history
+
+
+// GET: Combined bill and manual-sale history + CSV export
 export async function GET(request) {
     try {
         if (!(await isAuthorizedOwner())) {
@@ -32,10 +34,11 @@ export async function GET(request) {
 
         const { searchParams } = new URL(request.url);
 
-        const search = searchParams.get("search")?.trim();
+        const search = searchParams.get("search")?.trim() || "";
         const from = searchParams.get("from");
         const to = searchParams.get("to");
         const branchId = searchParams.get("branchId");
+        const exportCsv = searchParams.get("export") === "csv";
 
         if (branchId && !UUID.test(branchId)) {
             return NextResponse.json(
@@ -46,44 +49,24 @@ export async function GET(request) {
 
         const supabase = createAdminClient();
 
-        let query = supabase
-            .from("bills")
-            .select(`
-                id,
-                bill_number,
-                branch_id,
-                customer_name,
-                customer_phone,
-                subtotal,
-                total_amount,
-                status,
-                bill_date,
-                created_at,
-                branch:branches (
-                    id,
-                    name
-                )
-            `)
-            .order("bill_date", { ascending: false })
-            .limit(200);
-
-        if (branchId) {
-            query = query.eq("branch_id", branchId);
-        }
+        // Validate date filters
+        let fromDate = null;
+        let toDate = null;
 
         if (from) {
-            const fromDate = new Date(from);
+            fromDate = new Date(from);
+
             if (Number.isNaN(fromDate.getTime())) {
                 return NextResponse.json(
                     { error: "Invalid start date." },
                     { status: 400 }
                 );
             }
-            query = query.gte("bill_date", fromDate.toISOString());
         }
 
         if (to) {
-            const toDate = new Date(to);
+            toDate = new Date(to);
+
             if (Number.isNaN(toDate.getTime())) {
                 return NextResponse.json(
                     { error: "Invalid end date." },
@@ -91,28 +74,303 @@ export async function GET(request) {
                 );
             }
 
-            // Include the complete selected end date.
             toDate.setHours(23, 59, 59, 999);
-            query = query.lte("bill_date", toDate.toISOString());
         }
 
-        if (search) {
-            const safeSearch = search.replace(/[,%()]/g, " ").trim();
+        const safeSearch = search.replace(/[,%()]/g, " ").trim();
+
+        // Build a fresh query for each page
+        function buildBillQuery() {
+            let query = supabase
+                .from("bills")
+                .select(`
+                    id,
+                    bill_number,
+                    branch_id,
+                    customer_name,
+                    customer_phone,
+                    subtotal,
+                    total_amount,
+                    status,
+                    bill_date,
+                    created_at,
+                    branch:branches (
+                        id,
+                        name
+                    )
+                `)
+                .order("bill_date", { ascending: false });
+
+            if (branchId) {
+                query = query.eq("branch_id", branchId);
+            }
+
+            if (fromDate) {
+                query = query.gte("bill_date", fromDate.toISOString());
+            }
+
+            if (toDate) {
+                query = query.lte("bill_date", toDate.toISOString());
+            }
 
             if (safeSearch) {
                 query = query.or(
                     `bill_number.ilike.%${safeSearch}%,customer_name.ilike.%${safeSearch}%,customer_phone.ilike.%${safeSearch}%`
                 );
             }
+
+            return query;
         }
 
-        const { data, error } = await query;
+        function buildManualQuery() {
+            let query = supabase
+                .from("sub_product_transactions")
+                .select(`
+                    id,
+                    branch_id,
+                    sub_product_id,
+                    quantity,
+                    transaction_total,
+                    transaction_at,
+                    sub_product:sub_products (
+                        id,
+                        name
+                    ),
+                    branch:branches (
+                        id,
+                        name
+                    )
+                `)
+                .eq("type", "sale")
+                .is("bill_item_id", null)
+                .order("transaction_at", { ascending: false });
 
-        if (error) throw error;
+            if (branchId) {
+                query = query.eq("branch_id", branchId);
+            }
+
+            if (fromDate) {
+                query = query.gte(
+                    "transaction_at",
+                    fromDate.toISOString()
+                );
+            }
+
+            if (toDate) {
+                query = query.lte(
+                    "transaction_at",
+                    toDate.toISOString()
+                );
+            }
+
+            return query;
+        }
+
+        // Fetch every page for CSV; normal dashboard remains limited to 200
+        async function fetchAllPages(buildQuery) {
+            const pageSize = 1000;
+            let allRows = [];
+            let offset = 0;
+
+            while (true) {
+                const { data, error } = await buildQuery()
+                    .range(offset, offset + pageSize - 1);
+
+                if (error) throw error;
+
+                const rows = data || [];
+                allRows = allRows.concat(rows);
+
+                if (rows.length < pageSize) break;
+
+                offset += pageSize;
+            }
+
+            return allRows;
+        }
+
+        let bills;
+        let manualSales;
+
+        if (exportCsv) {
+            [bills, manualSales] = await Promise.all([
+                fetchAllPages(buildBillQuery),
+                fetchAllPages(buildManualQuery),
+            ]);
+        } else {
+            const [
+                { data: billData, error: billError },
+                { data: manualData, error: manualError },
+            ] = await Promise.all([
+                buildBillQuery().limit(200),
+                buildManualQuery().limit(200),
+            ]);
+
+            if (billError) throw billError;
+            if (manualError) throw manualError;
+
+            bills = billData || [];
+            manualSales = manualData || [];
+        }
+
+        const normalizedBills = bills.map((bill) => ({
+            id: bill.id,
+            type: "Bill",
+            reference: bill.bill_number || "",
+            name: bill.customer_name || "Walk-in customer",
+            detail: bill.customer_phone || "",
+            branch: bill.branch?.name || "",
+            date: bill.bill_date,
+            quantity: "",
+            amount: bill.total_amount,
+            status: bill.status || "",
+        }));
+
+        const normalizedManualSales = manualSales
+            .filter((sale) => {
+                if (!safeSearch) return true;
+
+                return (
+                    sale.sub_product?.name
+                        ?.toLowerCase()
+                        .includes(safeSearch.toLowerCase()) || false
+                );
+            })
+            .map((sale) => ({
+                id: sale.id,
+                type: "Manual Sale",
+                reference: "Manual Sale",
+                name: sale.sub_product?.name || "Unknown product",
+                detail: "",
+                branch: sale.branch?.name || "",
+                date: sale.transaction_at,
+                quantity: Number(sale.quantity || 0),
+                amount: sale.transaction_total,
+                status: "Manual Sale",
+            }));
+
+        const combined = [
+            ...normalizedBills,
+            ...normalizedManualSales,
+        ].sort(
+            (a, b) =>
+                new Date(b.date).getTime() -
+                new Date(a.date).getTime()
+        );
+
+        if (exportCsv) {
+            const headers = [
+                "Type",
+                "Reference",
+                "Customer / Product",
+                "Phone",
+                "Branch",
+                "Date",
+                "Quantity",
+                "Amount (INR)",
+                "Status",
+            ];
+
+            function escapeCsv(value) {
+                let text = value == null ? "" : String(value);
+
+                // Prevent spreadsheet formula injection
+                if (/^[=+\-@\t\r]/.test(text)) {
+                    text = "'" + text;
+                }
+
+                return `"${text.replace(/"/g, '""')}"`;
+            }
+
+            const rows = combined.map((item) => [
+                item.type,
+                item.reference,
+                item.name,
+                item.detail,
+                item.branch,
+                item.date
+                    ? new Date(item.date).toLocaleString("en-IN")
+                    : "",
+                item.quantity,
+                item.amount,
+                item.status,
+            ]);
+
+            const csv = [
+                headers,
+                ...rows,
+            ]
+                .map((row) => row.map(escapeCsv).join(","))
+                .join("\r\n");
+
+            const filename = `murlidhar-sales-history-${new Date()
+                .toISOString()
+                .slice(0, 10)}.csv`;
+
+            return new Response("\uFEFF" + csv, {
+                status: 200,
+                headers: {
+                    "Content-Type": "text/csv; charset=utf-8",
+                    "Content-Disposition": `attachment; filename="${filename}"`,
+                    "Cache-Control": "no-store",
+                },
+            });
+        }
+
+        // Keep existing dashboard response shape
+        const dashboardData = [
+            ...bills.map((bill) => ({
+                ...bill,
+                type: "bill",
+                date: bill.bill_date,
+            })),
+            ...manualSales
+                .filter((sale) => {
+                    if (!search) return true;
+
+                    const productName =
+                        sale.sub_product?.name?.toLowerCase() || "";
+
+                    return productName.includes(search.toLowerCase());
+                })
+                .map((sale) => {
+                    const quantity = Number(sale.quantity || 0);
+                    const amount =
+                        sale.transaction_total == null
+                            ? null
+                            : Number(sale.transaction_total);
+
+                    return {
+                        id: `manual-${sale.id}`,
+                        type: "manual_sale",
+                        bill_number: "Manual Sale",
+                        branch_id: sale.branch_id,
+                        customer_name:
+                            sale.sub_product?.name || "Unknown product",
+                        customer_phone: `Quantity: ${quantity}`,
+                        subtotal: amount,
+                        total_amount: amount,
+                        transaction_total: amount,
+                        status: "Manual Sale",
+                        bill_date: sale.transaction_at,
+                        created_at: sale.transaction_at,
+                        date: sale.transaction_at,
+                        branch: sale.branch,
+                        sub_product_id: sale.sub_product_id,
+                        quantity,
+                    };
+                }),
+        ]
+            .sort(
+                (a, b) =>
+                    new Date(b.date).getTime() -
+                    new Date(a.date).getTime()
+            )
+            .slice(0, 200);
 
         return NextResponse.json({
             success: true,
-            data: data || [],
+            data: dashboardData,
         });
     } catch (error) {
         console.error("Bills GET:", error);
