@@ -210,24 +210,6 @@ export default function BillingPage() {
                             + Create New Bill
                         </Link>
                     </div>
-
-                    <div className="flex flex-wrap items-center gap-3">
-                        <button
-                            type="button"
-                            onClick={downloadSalesHistory}
-                            className="flex items-center gap-2 rounded-lg border border-neutral-300 bg-white px-5 py-3 text-sm font-medium text-neutral-700 hover:bg-neutral-100"
-                        >
-                            <span>↓</span>
-                            Download History
-                        </button>
-
-                        <Link
-                            href="/billing/new"
-                            className="rounded-lg bg-neutral-900 px-5 py-3 text-sm font-medium text-white hover:bg-neutral-700"
-                        >
-                            + Create New Bill
-                        </Link>
-                    </div>
                 </div>
 
                 {/* SUMMARY */}
