@@ -65,8 +65,18 @@ export default function HomePage() {
             <InventorySearch />
           </div>
 
+
+
           {/* MANAGE BUTTON */}
           <div className="flex items-center gap-3">
+
+            <Link
+              href="/stock-view"
+              className="rounded-lg border-2 border-neutral-900 px-4 py-2 hover:bg-neutral-900 hover:text-white"
+            >
+              Stock View
+            </Link>
+
             <Link
               href="/billing"
               className="rounded-lg border-2 border-neutral-900 px-4 py-2 hover:bg-neutral-900 hover:text-white"
