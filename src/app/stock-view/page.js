@@ -218,7 +218,7 @@ export default function StockViewPage() {
                 ) : (
 
                     /* PRODUCT CARDS */
-                    <div className="grid gap-5 lg:grid-cols-2">
+                    <div className="grid gap-5 lg:grid-cols-3">
 
                         {filteredItems.map((product) => (
 
@@ -328,7 +328,7 @@ export default function StockViewPage() {
                                                             Branch-wise Stock
                                                         </p>
 
-                                                        <div className="grid gap-2 sm:grid-cols-2">
+                                                        <div className="grid gap-2 sm:grid-cols-1">
                                                             {item.branches.map((branch) => (
                                                                 <div
                                                                     key={branch.id}
