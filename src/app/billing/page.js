@@ -329,7 +329,7 @@ export default function BillingPage() {
                                 <thead className="bg-neutral-50 text-xs uppercase text-neutral-500">
                                     <tr>
                                         <th className="px-5 py-3">Bill number</th>
-                                        <th className="px-5 py-3">Customer</th>
+                                        <th className="px-5 py-3">Product</th>
                                         <th className="px-5 py-3">Branch</th>
                                         <th className="px-5 py-3">Date</th>
                                         <th className="px-5 py-3">Amount</th>
@@ -346,16 +346,26 @@ export default function BillingPage() {
                                                     : bill.bill_number}
                                             </td>
 
-                                            <td className="px-5 py-4">
-                                                <p className="font-medium text-neutral-800">
-                                                    {bill.customer_name || "Walk-in customer"}
-                                                </p>
+                                            <td className="min-w-[280px] px-5 py-4">
+                                                <div className="space-y-3">
+                                                    {(bill.products || []).map((product, index) => (
+                                                        <div key={`${product.subProductName}-${index}`}>
+                                                            <p className="font-medium text-neutral-900">
+                                                                {product.productName} · {product.subProductName}
+                                                            </p>
 
-                                                <p className="text-xs text-neutral-400">
-                                                    {bill.type === "manual_sale"
-                                                        ? `Quantity: ${bill.quantity}`
-                                                        : bill.customer_phone || "—"}
-                                                </p>
+                                                            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-neutral-400">
+                                                                <span>Qty: {product.quantity}</span>
+                                                                <span>{product.categoryName}</span>
+                                                                <span>{product.brandName}</span>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+
+                                                    {(!bill.products || bill.products.length === 0) && (
+                                                        <span className="text-neutral-400">No product details</span>
+                                                    )}
+                                                </div>
                                             </td>
 
                                             <td className="whitespace-nowrap px-5 py-4 text-neutral-600">

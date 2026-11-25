@@ -12,6 +12,8 @@ export const runtime = "nodejs";
 const UUID =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+const VALID_TYPES = ["purchase", "sale", "add", "remove"];
+
 function validatePrice(value, fieldName, required = false) {
     if (value === undefined || value === null || value === "") {
         if (required) {
@@ -46,6 +48,7 @@ function validatePrice(value, fieldName, required = false) {
 
 export async function POST(request) {
     try {
+        // OWNER AUTHENTICATION
         const cookieStore = await cookies();
         const token = cookieStore.get(getOwnerCookieName())?.value;
 
@@ -71,6 +74,7 @@ export async function POST(request) {
             transactionTotal,
         } = body;
 
+        // BASIC VALIDATION
         if (
             !UUID.test(branchId || "") ||
             !UUID.test(subProductId || "")
@@ -81,17 +85,14 @@ export async function POST(request) {
             );
         }
 
-        if (!["purchase", "sale"].includes(type)) {
+        if (!VALID_TYPES.includes(type)) {
             return NextResponse.json(
                 { error: "Invalid transaction type." },
                 { status: 400 }
             );
         }
 
-        if (
-            !Number.isSafeInteger(quantity) ||
-            quantity <= 0
-        ) {
+        if (!Number.isSafeInteger(quantity) || quantity <= 0) {
             return NextResponse.json(
                 { error: "Quantity must be a positive whole number." },
                 { status: 400 }
@@ -108,13 +109,30 @@ export async function POST(request) {
             );
         }
 
-        const price = type === "purchase"
-            ? validatePrice(purchasePrice, "Purchase price", true)
-            : validatePrice(
+        // PRICE VALIDATION
+        let price = { valid: true, value: null };
+        let selling = { valid: true, value: null };
+
+        if (type === "purchase") {
+            price = validatePrice(
+                purchasePrice,
+                "Purchase price",
+                true
+            );
+
+            selling = validatePrice(
+                sellingPrice,
+                "Selling price"
+            );
+        }
+
+        if (type === "sale") {
+            price = validatePrice(
                 transactionTotal,
                 "Total negotiated selling amount",
                 true
             );
+        }
 
         if (!price.valid) {
             return NextResponse.json(
@@ -123,10 +141,6 @@ export async function POST(request) {
             );
         }
 
-        const selling = type === "purchase"
-            ? validatePrice(sellingPrice, "Selling price")
-            : { valid: true, value: null };
-
         if (!selling.valid) {
             return NextResponse.json(
                 { error: selling.error },
@@ -134,6 +148,7 @@ export async function POST(request) {
             );
         }
 
+        // VALIDATE DATABASE RECORDS
         const supabase = createAdminClient();
 
         const [
@@ -180,6 +195,7 @@ export async function POST(request) {
             );
         }
 
+        // BUILD RPC ARGUMENTS
         const rpcArgs = {
             p_branch_id: branchId,
             p_sub_product_id: subProductId,
@@ -193,9 +209,14 @@ export async function POST(request) {
         if (type === "purchase") {
             rpcArgs.p_purchase_price = price.value;
             rpcArgs.p_selling_price = selling.value;
-        } else {
+        }
+
+        if (type === "sale") {
             rpcArgs.p_transaction_total = price.value;
         }
+
+        // ADD AND REMOVE DO NOT SEND ANY PRICE FIELDS.
+        // Their price fields remain unchanged.
 
         const { data, error } = await supabase.rpc(
             "record_sub_product_transaction",
@@ -203,7 +224,10 @@ export async function POST(request) {
         );
 
         if (error) {
-            console.error("Sub-product transaction RPC:", error);
+            console.error(
+                "Sub-product transaction RPC:",
+                error
+            );
 
             return NextResponse.json(
                 {
@@ -219,8 +243,12 @@ export async function POST(request) {
             success: true,
             transaction: data,
         });
+
     } catch (error) {
-        console.error("Sub-product transaction API:", error);
+        console.error(
+            "Sub-product transaction API:",
+            error
+        );
 
         return NextResponse.json(
             { error: "Unable to record transaction." },

@@ -126,21 +126,27 @@ export async function GET(request) {
             let query = supabase
                 .from("sub_product_transactions")
                 .select(`
-                    id,
-                    branch_id,
-                    sub_product_id,
-                    quantity,
-                    transaction_total,
-                    transaction_at,
-                    sub_product:sub_products (
                         id,
-                        name
-                    ),
-                    branch:branches (
-                        id,
-                        name
-                    )
-                `)
+                        branch_id,
+                        sub_product_id,
+                        quantity,
+                        transaction_total,
+                        transaction_at,
+                        sub_product:sub_products (
+                            id,
+                            name,
+                            product:products (
+                                id,
+                                name,
+                                category:categories (name),
+                                brand:brands (name)
+                            )
+                        ),
+                        branch:branches (
+                            id,
+                            name
+                        )
+                    `)
                 .eq("type", "sale")
                 .is("bill_item_id", null)
                 .order("transaction_at", { ascending: false });
@@ -211,6 +217,51 @@ export async function GET(request) {
 
             bills = billData || [];
             manualSales = manualData || [];
+        }
+
+        // FETCH BILL ITEMS WITH PRODUCT DETAILS
+        const billIds = bills.map((bill) => bill.id);
+
+        let billItemsByBill = {};
+
+        if (billIds.length > 0) {
+            const { data: billItems, error: billItemsError } = await supabase
+                .from("bill_items")
+                .select(`
+            bill_id,
+            sub_product_id,
+            quantity,
+            sub_product:sub_products (
+                id,
+                name,
+                product:products (
+                    id,
+                    name,
+                    category:categories (name),
+                    brand:brands (name)
+                )
+            )
+        `)
+                .in("bill_id", billIds);
+
+            if (billItemsError) throw billItemsError;
+
+            for (const item of billItems || []) {
+                if (!billItemsByBill[item.bill_id]) {
+                    billItemsByBill[item.bill_id] = [];
+                }
+
+                const subProduct = item.sub_product;
+                const product = subProduct?.product;
+
+                billItemsByBill[item.bill_id].push({
+                    productName: product?.name || "Unknown product",
+                    subProductName: subProduct?.name || "Unknown item",
+                    quantity: Number(item.quantity || 0),
+                    categoryName: product?.category?.name || "—",
+                    brandName: product?.brand?.name || "—",
+                });
+            }
         }
 
         const normalizedBills = bills.map((bill) => ({
@@ -323,6 +374,7 @@ export async function GET(request) {
                 ...bill,
                 type: "bill",
                 date: bill.bill_date,
+                products: billItemsByBill[bill.id] || [],
             })),
             ...manualSales
                 .filter((sale) => {
@@ -358,6 +410,23 @@ export async function GET(request) {
                         branch: sale.branch,
                         sub_product_id: sale.sub_product_id,
                         quantity,
+                        products: [
+                            {
+                                productName:
+                                    sale.sub_product?.product?.name || "Unknown product",
+
+                                subProductName:
+                                    sale.sub_product?.name || "Unknown item",
+
+                                quantity,
+
+                                categoryName:
+                                    sale.sub_product?.product?.category?.name || "—",
+
+                                brandName:
+                                    sale.sub_product?.product?.brand?.name || "—",
+                            },
+                        ],
                     };
                 }),
         ]

@@ -317,26 +317,32 @@ export default function ManagePage() {
         if (!editingSubProductStock || subProductStockSaving) return;
 
         const quantity = Number(subProductStockForm.quantity);
+        const type = subProductStockForm.type;
+
+        const isPurchase = type === "purchase";
+        const isSale = type === "sale";
+
         const purchasePrice = Number(subProductStockForm.purchasePrice);
         const sellingPrice = Number(subProductStockForm.sellingPrice);
-        const isPurchase = subProductStockForm.type === "purchase";
 
         if (!Number.isSafeInteger(quantity) || quantity <= 0) {
             setError("Please enter a valid quantity.");
             return;
         }
 
-        const transactionPrice = isPurchase ? purchasePrice : sellingPrice;
+        if (
+            isPurchase &&
+            (!Number.isFinite(purchasePrice) || purchasePrice < 0)
+        ) {
+            setError("Please enter a valid purchase price.");
+            return;
+        }
 
         if (
-            !Number.isFinite(transactionPrice) ||
-            transactionPrice < 0
+            isSale &&
+            (!Number.isFinite(sellingPrice) || sellingPrice < 0)
         ) {
-            setError(
-                isPurchase
-                    ? "Please enter a valid purchase price."
-                    : "Please enter a valid negotiated selling price."
-            );
+            setError("Please enter a valid negotiated selling price.");
             return;
         }
 
@@ -361,7 +367,7 @@ export default function ManagePage() {
             const payload = {
                 branchId: editingSubProductStock.branch.id,
                 subProductId: editingSubProductStock.subProduct.id,
-                type: subProductStockForm.type,
+                type,
                 quantity,
                 transactionAt: transactionDate.toISOString(),
             };
@@ -369,13 +375,15 @@ export default function ManagePage() {
             if (isPurchase) {
                 payload.purchasePrice = purchasePrice;
 
-                // Preserve the existing default selling price.
                 payload.sellingPrice = Number(
                     editingSubProductStock.subProduct.selling_price ?? 0
                 );
-            } else {
-                // Save the negotiated price for this sale only.
-                payload.unitPrice = sellingPrice;
+            }
+
+            if (isSale) {
+                payload.transactionTotal = Number(
+                    (sellingPrice * quantity).toFixed(2)
+                );
             }
 
             const response = await fetch(
@@ -389,7 +397,14 @@ export default function ManagePage() {
                 }
             );
 
-            const result = await response.json();
+            const responseText = await response.text();
+            let result = {};
+
+            try {
+                result = responseText ? JSON.parse(responseText) : {};
+            } catch {
+                throw new Error(`Invalid API response (${response.status}).`);
+            }
 
             if (!response.ok) {
                 throw new Error(
@@ -405,7 +420,6 @@ export default function ManagePage() {
             setSubProductStockSaving(false);
         }
     }
-
 
     useEffect(() => {
         loadData();
@@ -1485,15 +1499,15 @@ export default function ManagePage() {
                                     }
                                     className="w-full rounded-xl border border-gray-300 px-4 py-3"
                                 >
-                                    <option value="purchase">Purchase / Add Stock</option>
-                                    <option value="sale">Sale / Remove Stock</option>
+                                    <option value="purchase">Purchase Stock</option>
+                                    <option value="sale">Sale Stock</option>
+                                    <option value="add">Add Stock</option>
+                                    <option value="remove">Remove Items</option>
                                 </select>
                             </div>
 
-                            {/* PRICES ARE EDITABLE ONLY FOR PURCHASES */}
-
-                            {/* TRANSACTION PRICE */}
-                            {subProductStockForm.type === "purchase" ? (
+                            {/* PRICE FIELD */}
+                            {subProductStockForm.type === "purchase" && (
                                 <div>
                                     <label className="mb-1 block text-sm font-medium text-gray-700">
                                         Purchase Price (₹)
@@ -1515,10 +1529,12 @@ export default function ManagePage() {
                                     />
 
                                     <p className="mt-1 text-xs text-gray-400">
-                                        Default: Last saved purchase price
+                                        Updates the saved purchase price.
                                     </p>
                                 </div>
-                            ) : (
+                            )}
+
+                            {subProductStockForm.type === "sale" && (
                                 <div>
                                     <label className="mb-1 block text-sm font-medium text-gray-700">
                                         Negotiated Selling Price (₹)
@@ -1540,10 +1556,17 @@ export default function ManagePage() {
                                     />
 
                                     <p className="mt-1 text-xs text-gray-400">
-                                        Default: Current selling price
+                                        Applies to this sale only.
                                     </p>
                                 </div>
                             )}
+
+                            {(subProductStockForm.type === "add" ||
+                                subProductStockForm.type === "remove") && (
+                                    <div className="rounded-xl bg-gray-50 px-4 py-3 text-sm text-gray-500">
+                                        No price changes will be made to this transaction.
+                                    </div>
+                                )}
 
                             <div>
                                 <label className="mb-1 block text-sm font-medium text-gray-700">
